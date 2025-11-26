@@ -1,189 +1,324 @@
-:root {
-    --bg-color: #F8F8F8;
-    --card-bg: #FFFFFF;
-    --primary: #111111;
-    --accent: #007AFF; /* iOS Blue */
-    --text-main: #111111;
-    --text-sub: #888888;
-    --border: #E5E5E5;
-    --font: 'Inter', sans-serif;
-}
+document.addEventListener('DOMContentLoaded', () => {
+    // --- 1. 配置与状态 ---
+    const MY_ID = localStorage.getItem('sloth_v4_id') || 'U-' + Math.floor(Math.random() * 90000);
+    localStorage.setItem('sloth_v4_id', MY_ID);
 
-* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; outline: none; }
-body {
-    margin: 0; padding: 0; font-family: var(--font);
-    background: var(--bg-color); color: var(--text-main);
-    height: 100vh; overflow: hidden;
-}
+    let friends = JSON.parse(localStorage.getItem('sloth_v4_friends')) || [];
+    let activeChatId = null;
+    let peer = null;
+    let connections = {};
+    
+    // 缓存 UI 元素引用
+    const ui = {
+        mainPage: document.getElementById('view-main'),
+        chatPage: document.getElementById('view-chat'),
+        msgContainer: document.getElementById('messages-container'),
+        dragOverlay: document.getElementById('drag-overlay'),
+        toast: document.getElementById('persistent-toast'),
+        sound: document.getElementById('msg-sound'),
+        stickerPanel: document.getElementById('sticker-panel'),
+        chatInput: document.getElementById('chat-input')
+    };
 
-/* 页面架构 */
-#app-root { position: relative; width: 100%; height: 100%; overflow: hidden; }
-.page {
-    position: absolute; top: 0; left: 0; width: 100%; height: 100%;
-    background: var(--bg-color); display: flex; flex-direction: column;
-    transform: translateX(100%); transition: transform 0.35s cubic-bezier(0.32, 0.72, 0, 1);
-    z-index: 1;
-}
-.page.active { transform: translateX(0); }
-.page.right-sheet { z-index: 20; background: #fff; }
+    // --- 2. 初始化渲染 ---
+    // 保护 QRCode 初始化
+    try {
+        document.getElementById('my-display-name').innerText = "Me";
+        document.getElementById('my-id-display').innerText = MY_ID;
+        document.getElementById('card-id-text').innerText = MY_ID;
+        document.getElementById('my-avatar-small').src = `https://api.dicebear.com/7.x/notionists/svg?seed=${MY_ID}&backgroundColor=e5e5e5`;
+        if(window.QRCode) {
+            new QRCode(document.getElementById("qrcode"), { text: MY_ID, width: 64, height: 64, colorDark: "#000", colorLight: "#fff" });
+        }
+    } catch(e) { console.error('UI Init Failed', e); }
 
-/* Header */
-.main-header {
-    height: 60px; padding: 0 24px; display: flex; justify-content: space-between; align-items: center;
-    background: var(--bg-color);
-}
-.header-brand { font-weight: 800; font-size: 20px; letter-spacing: -0.5px; }
-.header-actions { display: flex; gap: 16px; }
-.icon-btn { background: none; border: none; cursor: pointer; color: var(--primary); padding: 0; }
+    // --- 3. 核心功能: 传输 (Chunking) ---
+    const CHUNK_SIZE = 16 * 1024;
+    const incomingFiles = {};
 
-/* Tab Content */
-.tab-content { display: none; flex: 1; overflow-y: auto; padding: 20px 24px 80px 24px; }
-.tab-content.active-tab { display: block; }
-.list-title { font-size: 13px; font-weight: 600; color: var(--text-sub); margin-bottom: 16px; text-transform: uppercase; letter-spacing: 1px; }
+    function sendFile(conn, file) {
+        const transferId = Date.now() + Math.random().toString();
+        const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
+        const msgId = appendFileMessage(MY_ID, { name: file.name, size: file.size, id: transferId }, true);
 
-/* 列表样式 */
-.k-list-item { display: flex; align-items: center; gap: 16px; padding: 12px 0; cursor: pointer; }
-.avatar-circle { width: 52px; height: 52px; border-radius: 50%; object-fit: cover; background: #eee; }
-.item-content { flex: 1; }
-.item-title { font-weight: 600; font-size: 16px; margin-bottom: 4px; }
-.item-subtitle { color: var(--text-sub); font-size: 14px; }
-.divider { height: 1px; background: var(--border); margin: 10px 0 20px 0; }
+        conn.send({ type: 'file-start', transferId, name: file.name, size: file.size, fileType: file.type, totalChunks });
 
-/* --- 高级名片设计 (Premium Card) --- */
-.premium-card-wrapper { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; }
-.premium-card {
-    width: 100%; max-width: 340px; height: 210px;
-    background: linear-gradient(135deg, #1a1a1a 0%, #000000 100%);
-    border-radius: 16px; padding: 24px; color: #fff;
-    position: relative; overflow: hidden;
-    box-shadow: 0 20px 40px -10px rgba(0,0,0,0.3);
-    display: flex; flex-direction: column; justify-content: space-between;
-}
-.card-top { display: flex; justify-content: space-between; align-items: center; }
-.card-chip {
-    width: 36px; height: 26px; background: linear-gradient(135deg, #e6cbaec4 0%, #d4af37 100%);
-    border-radius: 4px; position: relative;
-}
-.card-brand { font-size: 12px; letter-spacing: 2px; font-weight: 600; opacity: 0.8; }
-.card-body { display: flex; justify-content: space-between; align-items: flex-end; }
-.card-info { display: flex; flex-direction: column; }
-.card-label { font-size: 10px; color: #888; margin-bottom: 4px; letter-spacing: 1px; }
-.card-value { font-family: monospace; font-size: 16px; letter-spacing: 1px; }
-.card-qr {
-    background: #fff; padding: 4px; border-radius: 4px;
-    width: 70px; height: 70px; display: flex; justify-content: center; align-items: center;
-}
-.card-qr img { width: 100%; display: block; }
-.card-footer { display: flex; justify-content: space-between; font-size: 10px; opacity: 0.6; margin-top: 10px; }
-.card-shine {
-    position: absolute; top: -50%; left: -50%; width: 200%; height: 200%;
-    background: linear-gradient(to bottom right, rgba(255,255,255,0) 0%, rgba(255,255,255,0.05) 40%, rgba(255,255,255,0) 100%);
-    pointer-events: none; transform: rotate(30deg);
-}
-.card-hint { margin-top: 24px; color: var(--text-sub); font-size: 13px; letter-spacing: 1px; }
+        let chunkIndex = 0;
+        function sendNext() {
+            if (chunkIndex >= totalChunks) {
+                updateProgress(transferId, 100, true);
+                if (file.type.startsWith('image/')) showPreview(msgId, URL.createObjectURL(file));
+                return;
+            }
+            const start = chunkIndex * CHUNK_SIZE;
+            const chunk = file.slice(start, Math.min(start + CHUNK_SIZE, file.size));
+            const reader = new FileReader();
+            reader.onload = e => {
+                conn.send({ type: 'file-chunk', transferId, index: chunkIndex, data: e.target.result });
+                chunkIndex++;
+                updateProgress(transferId, Math.floor((chunkIndex/totalChunks)*100));
+                setTimeout(sendNext, 5); // 避免卡死 UI
+            };
+            reader.readAsArrayBuffer(chunk);
+        }
+        sendNext();
+    }
 
-/* 底部导航 */
-.bottom-nav {
-    position: absolute; bottom: 0; width: 100%; height: 70px; background: rgba(255,255,255,0.9);
-    backdrop-filter: blur(10px); border-top: 1px solid var(--border);
-    display: flex; justify-content: center; gap: 40px; padding-bottom: env(safe-area-inset-bottom);
-}
-.nav-btn {
-    border: none; background: none; font-weight: 600; font-size: 14px; color: var(--text-sub); cursor: pointer;
-    position: relative;
-}
-.nav-btn.active { color: var(--primary); }
-.nav-btn.active::after {
-    content: ''; position: absolute; bottom: 10px; left: 50%; transform: translateX(-50%);
-    width: 4px; height: 4px; background: var(--primary); border-radius: 50%;
-}
+    function handleFile(senderId, data) {
+        if (data.type === 'file-start') {
+            incomingFiles[data.transferId] = { meta: data, chunks: [], receivedCount: 0 };
+            appendFileMessage(senderId, { name: data.name, size: data.size, id: data.transferId }, false);
+        } else if (data.type === 'file-chunk') {
+            const f = incomingFiles[data.transferId];
+            if (!f) return;
+            f.chunks[data.index] = data.data;
+            f.receivedCount++;
+            updateProgress(data.transferId, Math.floor((f.receivedCount/f.meta.totalChunks)*100));
+            if (f.receivedCount === f.meta.totalChunks) {
+                const blob = new Blob(f.chunks, { type: f.meta.fileType });
+                finishDownload(data.transferId, blob, f.meta.name);
+                delete incomingFiles[data.transferId];
+            }
+        }
+    }
 
-/* 聊天窗口 */
-.chat-header {
-    height: 50px; display: flex; align-items: center; justify-content: space-between;
-    padding: 0 16px; border-bottom: 1px solid var(--border); background: #fff;
-}
-.back-text { font-size: 16px; color: var(--primary); background: none; border: none; font-weight: 500; cursor: pointer; }
-.chat-info { font-weight: 600; font-size: 16px; display: flex; align-items: center; gap: 6px; }
-.dot { width: 6px; height: 6px; background: #4cd964; border-radius: 50%; opacity: 0; transition: opacity 0.3s; }
-.dot.online { opacity: 1; }
-.menu-btn { font-size: 20px; background: none; border: none; cursor: pointer; }
+    // --- 4. 界面交互绑定 (放在最前，防止被 JS 错误打断) ---
+    
+    // 导航栏 Tab 切换
+    document.querySelectorAll('.nav-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active-tab'));
+            document.getElementById(btn.dataset.target).classList.add('active-tab');
+            document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+        });
+    });
 
-.messages-container { flex: 1; padding: 20px 16px; overflow-y: auto; display: flex; flex-direction: column; gap: 24px; }
+    // 聊天相关
+    function openChat(id) {
+        activeChatId = id;
+        document.getElementById('chat-partner-name').innerText = id;
+        ui.chatPage.classList.add('active');
+        ui.msgContainer.innerHTML = ''; 
+    }
+    
+    document.getElementById('chat-back-btn').addEventListener('click', () => {
+        ui.chatPage.classList.remove('active');
+        activeChatId = null;
+    });
 
-/* 消息气泡 */
-.msg-row { display: flex; flex-direction: column; max-width: 80%; }
-.msg-row.self { align-self: flex-end; align-items: flex-end; }
-.msg-row.other { align-self: flex-start; align-items: flex-start; }
+    // 发送消息
+    function sendText() {
+        const val = ui.chatInput.value.trim();
+        if(val && activeChatId && connections[activeChatId]) {
+            connections[activeChatId].send({ type: 'text', content: val });
+            appendMsg(val, true);
+            ui.chatInput.value = '';
+        }
+    }
+    document.getElementById('chat-send-btn').addEventListener('click', sendText);
+    ui.chatInput.addEventListener('keypress', e => { if(e.key === 'Enter') sendText(); });
 
-.bubble {
-    padding: 12px 16px; border-radius: 18px; font-size: 15px; line-height: 1.5;
-    background: #F2F2F7; color: #000; position: relative;
-}
-.msg-row.self .bubble { background: var(--primary); color: #fff; }
+    // 文件与表情
+    document.getElementById('add-file-btn').addEventListener('click', () => document.getElementById('real-file-input').click());
+    document.getElementById('real-file-input').addEventListener('change', (e) => {
+        if(e.target.files[0] && activeChatId) sendFile(connections[activeChatId], e.target.files[0]);
+    });
+    
+    document.getElementById('sticker-btn').addEventListener('click', () => ui.stickerPanel.classList.toggle('hidden'));
+    ui.chatInput.addEventListener('focus', () => ui.stickerPanel.classList.add('hidden'));
 
-/* 贴纸样式 */
-.sticker-img { width: 120px; height: 120px; object-fit: contain; }
+    // 生成表情包列表
+    const stickerSeeds = ['happy', 'cool', 'love', 'wink', 'angry', 'surprised', 'sleepy', 'cry'];
+    const grid = document.getElementById('sticker-grid');
+    if(grid) {
+        stickerSeeds.forEach(seed => {
+            const url = `https://api.dicebear.com/7.x/fun-emoji/svg?seed=${seed}&backgroundColor=transparent`;
+            const img = document.createElement('img');
+            img.src = url;
+            img.className = 'sticker-item';
+            img.addEventListener('click', () => {
+                if(activeChatId && connections[activeChatId]) {
+                    connections[activeChatId].send({ type: 'sticker', url: url });
+                    appendSticker(url, true);
+                    ui.stickerPanel.classList.add('hidden');
+                }
+            });
+            grid.appendChild(img);
+        });
+    }
 
-/* 文件卡片与进度条 */
-.file-card { width: 220px; background: #fff; border: 1px solid var(--border); border-radius: 12px; padding: 12px; display: flex; flex-direction: column; gap: 8px; }
-.file-info { display: flex; align-items: center; gap: 10px; font-size: 14px; font-weight: 500; color: #000; }
-.file-icon { font-size: 24px; }
-.progress-track { width: 100%; height: 4px; background: #eee; border-radius: 2px; overflow: hidden; }
-.progress-bar { height: 100%; background: #007AFF; width: 0%; transition: width 0.1s; }
-.file-meta { font-size: 10px; color: #888; display: flex; justify-content: space-between; }
-.preview-img { width: 100%; border-radius: 8px; margin-top: 5px; display: block; }
+    // 拖拽逻辑 (修复版：使用计数器避免闪烁)
+    let dragCounter = 0;
+    document.body.addEventListener('dragenter', (e) => {
+        e.preventDefault();
+        dragCounter++;
+        if(activeChatId) {
+            ui.dragOverlay.classList.remove('hidden');
+            ui.dragOverlay.classList.add('active'); // 允许指针事件
+        }
+    });
+    document.body.addEventListener('dragleave', (e) => {
+        e.preventDefault();
+        dragCounter--;
+        if(dragCounter <= 0) {
+            ui.dragOverlay.classList.add('hidden');
+            ui.dragOverlay.classList.remove('active');
+        }
+    });
+    document.body.addEventListener('dragover', e => e.preventDefault());
+    document.body.addEventListener('drop', (e) => {
+        e.preventDefault();
+        dragCounter = 0;
+        ui.dragOverlay.classList.add('hidden');
+        ui.dragOverlay.classList.remove('active');
+        
+        if(e.dataTransfer.files[0] && activeChatId) {
+            sendFile(connections[activeChatId], e.dataTransfer.files[0]);
+        }
+    });
 
-/* 底部输入区 */
-.chat-footer {
-    padding: 10px 16px; background: #fff; border-top: 1px solid var(--border);
-    display: flex; align-items: center; gap: 12px; padding-bottom: max(10px, env(safe-area-inset-bottom));
-}
-.input-box { flex: 1; background: #F2F2F7; border-radius: 20px; padding: 8px 12px; }
-#chat-input { width: 100%; background: transparent; border: none; font-size: 15px; }
-.footer-btn { font-size: 24px; background: none; border: none; color: #888; cursor: pointer; padding: 0; }
-.send-btn { width: 36px; height: 36px; border-radius: 50%; background: var(--primary); color: #fff; border: none; font-weight: bold; cursor: pointer; }
+    // 弹窗逻辑
+    const qrModal = document.getElementById('qr-overlay');
+    const addModal = document.getElementById('add-overlay');
+    
+    document.getElementById('scan-btn').addEventListener('click', () => {
+        qrModal.classList.remove('hidden');
+        try {
+            const scanner = new Html5Qrcode("qr-reader");
+            scanner.start({facingMode:"environment"}, {fps:10}, (txt)=>{
+                scanner.stop(); qrModal.classList.add('hidden');
+                addFriend(txt); connectTo(txt); openChat(txt);
+            });
+            window.currentScanner = scanner;
+        } catch(e) { alert('Scanner Error'); }
+    });
+    window.closeScanner = () => { 
+        if(window.currentScanner) window.currentScanner.stop();
+        qrModal.classList.add('hidden'); 
+    };
 
-/* 表情面板 */
-.sticker-panel { height: 200px; background: #fff; overflow-y: auto; border-top: 1px solid var(--border); padding: 10px; transition: height 0.3s; }
-.sticker-panel.hidden { height: 0; padding: 0; border: none; }
-.sticker-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
-.sticker-item { width: 100%; cursor: pointer; transition: transform 0.1s; }
-.sticker-item:active { transform: scale(0.9); }
+    document.getElementById('add-id-btn').addEventListener('click', () => addModal.classList.remove('hidden'));
+    window.closeAddModal = () => addModal.classList.add('hidden');
+    document.getElementById('confirm-add-btn').addEventListener('click', () => {
+        const id = document.getElementById('manual-id-input').value.trim();
+        if(id) { addFriend(id); connectTo(id); closeAddModal(); }
+    });
 
-/* 拖拽遮罩 */
-.drag-overlay {
-    position: absolute; top:0; left:0; width:100%; height:100%; background: rgba(0,0,0,0.6);
-    z-index: 50; display: flex; justify-content: center; align-items: center; pointer-events: none;
-}
-.drag-overlay.active { pointer-events: auto; } /* 只有在 active 时才响应 */
-.drag-overlay.hidden { display: none; }
-.drag-box { width: 200px; height: 200px; border: 2px dashed #fff; border-radius: 20px; display: flex; flex-direction: column; align-items: center; justify-content: center; color: #fff; gap: 10px; }
+    // 通知逻辑
+    let pendingNotifyId = null;
+    function showNotify(id, txt) {
+        if(activeChatId === id) return;
+        ui.sound.play().catch(()=>{});
+        pendingNotifyId = id;
+        document.getElementById('notify-text').innerText = `${id}: ${txt}`;
+        ui.toast.classList.remove('hidden');
+    }
+    document.getElementById('notify-close').onclick = () => ui.toast.classList.add('hidden');
+    document.getElementById('notify-view').onclick = () => {
+        ui.toast.classList.add('hidden');
+        if(pendingNotifyId) openChat(pendingNotifyId);
+    };
 
-/* Persistent Toast Notification */
-.notify-card {
-    position: fixed; top: 20px; left: 50%; transform: translateX(-50%);
-    width: 90%; max-width: 400px; background: rgba(255,255,255,0.95); backdrop-filter: blur(10px);
-    border-radius: 16px; box-shadow: 0 10px 30px rgba(0,0,0,0.15);
-    padding: 16px; display: flex; flex-direction: column; gap: 10px; z-index: 999;
-    border: 1px solid rgba(0,0,0,0.05); animation: slideDown 0.3s ease-out;
-}
-@keyframes slideDown { from { top: -100px; } to { top: 20px; } }
-.notify-card.hidden { display: none; }
-.notify-title { font-weight: 700; font-size: 14px; color: var(--primary); }
-.notify-body { font-size: 13px; color: var(--text-sub); }
-.notify-actions { display: flex; gap: 10px; justify-content: flex-end; }
-.notify-btn { border: none; background: none; font-size: 13px; font-weight: 600; cursor: pointer; padding: 6px 12px; border-radius: 8px; }
-.notify-btn.close { color: #888; background: #f2f2f2; }
-.notify-btn.view { color: #fff; background: var(--primary); }
+    // --- 5. DOM 渲染辅助 ---
+    function appendMsg(txt, isSelf) {
+        const div = document.createElement('div');
+        div.className = `msg-row ${isSelf?'self':'other'}`;
+        div.innerHTML = `<div class="bubble">${txt}</div>`;
+        ui.msgContainer.appendChild(div);
+        ui.msgContainer.scrollTop = ui.msgContainer.scrollHeight;
+    }
+    function appendSticker(url, isSelf) {
+        const div = document.createElement('div');
+        div.className = `msg-row ${isSelf?'self':'other'}`;
+        div.innerHTML = `<img src="${url}" class="sticker-img">`;
+        ui.msgContainer.appendChild(div);
+        ui.msgContainer.scrollTop = ui.msgContainer.scrollHeight;
+    }
+    function appendFileMessage(senderId, info, isSelf) {
+        const div = document.createElement('div');
+        const id = 'msg-' + info.id; div.id = id;
+        div.className = `msg-row ${isSelf?'self':'other'}`;
+        div.innerHTML = `
+            <div class="file-card">
+                <div class="file-info"><span style="font-size:20px">📄</span> ${info.name}</div>
+                <div class="progress-track"><div class="progress-bar" id="p-${info.id}"></div></div>
+                <div class="file-meta"><span>${(info.size/1024).toFixed(1)} KB</span><span id="t-${info.id}">0%</span></div>
+                <div id="pv-${info.id}"></div>
+            </div>`;
+        ui.msgContainer.appendChild(div);
+        ui.msgContainer.scrollTop = ui.msgContainer.scrollHeight;
+        return id;
+    }
+    function updateProgress(tid, pct, done) {
+        const bar = document.getElementById(`p-${tid}`);
+        const txt = document.getElementById(`t-${tid}`);
+        if(bar) { bar.style.width = pct+'%'; if(done) bar.style.background='#4cd964'; }
+        if(txt) txt.innerText = done ? 'Done' : pct+'%';
+    }
+    function finishDownload(tid, blob, name) {
+        updateProgress(tid, 100, true);
+        const box = document.getElementById(`pv-${tid}`);
+        const url = URL.createObjectURL(blob);
+        if(blob.type.startsWith('image/')) showPreview(`msg-${tid}`, url);
+        else if(box) box.innerHTML = `<a href="${url}" download="${name}" style="color:#007AFF;font-size:12px;margin-top:5px;display:block">Save File</a>`;
+    }
+    function showPreview(eid, url) {
+        const el = document.getElementById(eid);
+        if(el) { const b = el.querySelector('[id^="pv-"]'); if(b) b.innerHTML = `<img src="${url}" class="preview-img">`; }
+    }
+    
+    // 好友列表
+    function addFriend(id) {
+        if(!friends.includes(id)) { friends.push(id); localStorage.setItem('sloth_v4_friends', JSON.stringify(friends)); }
+        renderFriends();
+    }
+    function renderFriends() {
+        const c = document.getElementById('friends-list-container');
+        c.innerHTML = '';
+        friends.forEach(id => {
+            const div = document.createElement('div');
+            div.className = 'k-list-item';
+            div.innerHTML = `<img src="https://api.dicebear.com/7.x/notionists/svg?seed=${id}&backgroundColor=e5e5e5" class="avatar-circle">
+            <div class="item-content"><div class="item-title">${id}</div><div class="item-subtitle">Tap to chat</div></div>`;
+            div.addEventListener('click', () => openChat(id));
+            c.appendChild(div);
+        });
+    }
 
-/* Modal */
-.modal-overlay { position: fixed; top:0; left:0; width:100%; height:100%; background: rgba(0,0,0,0.4); z-index: 100; display:flex; justify-content:center; align-items:center; }
-.modal-overlay.hidden { display: none; }
-.modal-box { background: #fff; padding: 24px; border-radius: 16px; width: 300px; }
-.scanner-box { padding: 0; background: #000; overflow: hidden; position: relative; }
-.close-float { position: absolute; top: 10px; right: 10px; background: rgba(255,255,255,0.3); border: none; width: 30px; height: 30px; border-radius: 50%; color: #fff; font-size: 20px; z-index: 10; cursor: pointer; }
-.modal-input { width: 100%; padding: 12px; margin: 15px 0; border: 1px solid var(--border); border-radius: 8px; }
-.modal-btns { display: flex; justify-content: flex-end; gap: 10px; }
-.btn-primary { background: var(--primary); color: #fff; border: none; padding: 8px 16px; border-radius: 6px; font-weight: 600; cursor: pointer; }
-.btn-text { background: none; border: none; color: #888; cursor: pointer; }
+    // --- 6. 网络启动 (放在最后) ---
+    function connectTo(id) {
+        if(!id || id===MY_ID) return;
+        const conn = peer.connect(id);
+        setupConn(conn);
+    }
+    function setupConn(conn) {
+        conn.on('open', () => {
+            connections[conn.peer] = conn;
+            addFriend(conn.peer);
+            renderFriends();
+            if(activeChatId === conn.peer) document.querySelector('.dot').classList.add('online');
+        });
+        conn.on('data', d => {
+            if(d.type==='text') { if(activeChatId===conn.peer) appendMsg(d.content,false); showNotify(conn.peer, d.content); }
+            else if(d.type==='sticker') { if(activeChatId===conn.peer) appendSticker(d.url,false); showNotify(conn.peer, '[Sticker]'); }
+            else if(d.type.startsWith('file-')) handleFile(conn.peer, d);
+        });
+    }
+
+    try {
+        if(window.Peer) {
+            peer = new Peer(MY_ID);
+            peer.on('open', () => { renderFriends(); friends.forEach(connectTo); });
+            peer.on('connection', setupConn);
+            peer.on('error', e => console.log('Peer Error', e));
+        } else {
+            console.error('PeerJS failed to load');
+            alert('Network Error: PeerJS lib missing');
+        }
+    } catch(e) { console.error('Peer Init Failed', e); }
+
+    // 全局点击解锁音频
+    document.body.addEventListener('click', () => ui.sound.load(), { once: true });
+    renderFriends();
+});
