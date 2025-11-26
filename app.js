@@ -1,259 +1,381 @@
-// --- 1. 动森 ID 系统 ---
-let myId = localStorage.getItem('sloth_drop_id_v2');
-if (!myId) {
-    // 生成更短的随机ID，方便输入
-    myId = 'SL-' + Math.floor(100000 + Math.random() * 900000);
-    localStorage.setItem('sloth_drop_id_v2', myId);
+// --- 1. 数据层 (Model) ---
+const DB_VERSION = 'v3';
+let currentUser = JSON.parse(localStorage.getItem(`sloth_user_${DB_VERSION}`)) || {
+    id: 'SL-' + Math.floor(100000 + Math.random() * 900000),
+    avatar: `https://api.dicebear.com/7.x/notionists/svg?seed=${Date.now()}&backgroundColor=ffe0a5`
+};
+localStorage.setItem(`sloth_user_${DB_VERSION}`, JSON.stringify(currentUser));
+
+// 好友列表: [{id, nickname, addedAt}]
+let friends = JSON.parse(localStorage.getItem(`sloth_friends_${DB_VERSION}`)) || [];
+
+// 聊天记录: { friendId: [ { type, content, isSelf, timestamp } ] }
+let chatHistory = JSON.parse(localStorage.getItem(`sloth_history_${DB_VERSION}`)) || {};
+
+function saveHistory() {
+    localStorage.setItem(`sloth_history_${DB_VERSION}`, JSON.stringify(chatHistory));
 }
 
-// 随机头像 (Bottts 改为更可爱的风格)
-const getAvatar = (seed) => `https://api.dicebear.com/7.x/notionists/svg?seed=${seed}&backgroundColor=ffe0a5`;
+function addMessageToHistory(friendId, msg) {
+    if (!chatHistory[friendId]) chatHistory[friendId] = [];
+    chatHistory[friendId].push(msg);
+    saveHistory();
+}
 
-document.getElementById('my-avatar').src = getAvatar(myId);
-document.getElementById('my-avatar-small').src = getAvatar(myId);
-document.getElementById('my-id-text').innerText = myId;
+function updateFriendName(id, newName) {
+    const f = friends.find(x => x.id === id);
+    if (f) {
+        f.nickname = newName;
+        localStorage.setItem(`sloth_friends_${DB_VERSION}`, JSON.stringify(friends));
+        renderFriendsList();
+        if (activeChatId === id) document.getElementById('chat-partner-name').innerText = newName;
+    }
+}
 
-// 生成二维码 (无边框，更融入设计)
+// --- 2. 初始化 UI ---
+document.getElementById('my-avatar-small').src = currentUser.avatar;
+document.getElementById('my-avatar-large').src = currentUser.avatar;
+document.getElementById('my-id-display').innerText = `ID: ${currentUser.id}`;
+document.getElementById('card-id-text').innerText = currentUser.id;
+
+// 生成二维码
 new QRCode(document.getElementById("qrcode"), {
-    text: myId, width: 150, height: 150, colorDark : "#5A4D41", colorLight : "#ffffff", correctLevel : QRCode.CorrectLevel.M
+    text: currentUser.id, width: 160, height: 160, colorDark : "#191919", colorLight : "#ffffff"
 });
 
-// --- 2. PeerJS 联网 (保持原逻辑，适配新UI) ---
-const statusPill = document.getElementById('connection-status');
+// --- 3. 路由与导航 (History API 修复侧滑返回) ---
+let activeChatId = null;
+
+function showToast(msg, duration = 2000) {
+    const t = document.getElementById('toast');
+    t.innerText = msg;
+    t.classList.remove('hidden');
+    setTimeout(() => t.classList.add('hidden'), duration);
+    // 点击 Toast 跳转 (如果是收到消息)
+    t.onclick = () => {
+        if(lastMsgSender && lastMsgSender !== activeChatId) openChat(lastMsgSender);
+    };
+}
+
+// 切换主页面 Tab
+document.querySelectorAll('.tab-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+        document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+        document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active-tab'));
+        btn.classList.add('active');
+        document.getElementById(btn.dataset.target).classList.add('active-tab');
+        
+        // 更改 Header 标题
+        document.getElementById('header-title').innerText = btn.dataset.title;
+    });
+});
+
+// 打开聊天窗口 (Push State)
+function openChat(friendId) {
+    activeChatId = friendId;
+    const friend = friends.find(f => f.id === friendId) || { nickname: friendId };
+    
+    document.getElementById('chat-partner-name').innerText = friend.nickname || friendId;
+    renderChatMessages(friendId);
+    
+    // 更新在线状态UI
+    updateOnlineStatusUI(friendId);
+
+    // 动画入场
+    const chatPage = document.getElementById('view-chat');
+    chatPage.classList.add('active');
+
+    // **核心修复**: 添加历史记录，拦截浏览器返回按键
+    window.history.pushState({ page: 'chat', id: friendId }, "Chat", "#chat");
+}
+
+// 关闭聊天窗口
+function closeChat() {
+    document.getElementById('view-chat').classList.remove('active');
+    activeChatId = null;
+}
+
+// 监听浏览器后退 (物理返回键 / 侧滑)
+window.onpopstate = function(event) {
+    // 如果没有 state，说明回到了主页
+    if (!event.state) {
+        closeChat();
+    }
+};
+
+document.getElementById('chat-back-btn').addEventListener('click', () => {
+    window.history.back(); // 手动触发后退
+});
+
+// --- 4. 网络层 (PeerJS) ---
+const statusBadge = document.getElementById('chat-status-indicator');
 let peer = null;
-let connections = {};
-let activeChatId = null; 
+let connections = {}; // { friendId: conn }
+let lastMsgSender = null;
+
+// 音频初始化 (必须用户交互后才能播放)
+const audioEl = document.getElementById('msg-sound');
+document.body.addEventListener('click', () => {
+    if(audioEl.paused) audioEl.load(); // 预加载，解锁 AudioContext
+}, { once: true });
 
 function initNetwork() {
-    statusPill.innerText = '连接中...';
-    peer = new Peer(myId); // 使用默认 PeerServer
+    peer = new Peer(currentUser.id);
 
     peer.on('open', (id) => {
-        statusPill.innerText = '在线';
-        statusPill.classList.add('online');
-        reconnectFriends();
+        console.log('Online:', id);
+        reconnectAll();
     });
 
     peer.on('connection', (conn) => {
         setupConnection(conn);
     });
-
-    peer.on('error', (err) => {
-        console.log(err);
-        statusPill.innerText = '离线';
-        statusPill.classList.remove('online');
-    });
+    
+    peer.on('error', err => console.log('Peer Error', err));
 }
 
 function setupConnection(conn) {
     conn.on('open', () => {
         connections[conn.peer] = conn;
-        addFriendToList(conn.peer); // 自动加好友
-        updateChatStatus(conn.peer, true);
+        // 如果是陌生人，自动存为好友
+        if (!friends.find(f => f.id === conn.peer)) {
+            addFriend(conn.peer);
+        }
+        renderFriendsList(); // 更新列表状态点
+        if(activeChatId === conn.peer) updateOnlineStatusUI(conn.peer);
     });
 
-    conn.on('data', (data) => handleIncomingData(conn.peer, data));
+    conn.on('data', (data) => handleData(conn.peer, data));
+    
     conn.on('close', () => {
         delete connections[conn.peer];
-        updateChatStatus(conn.peer, false);
+        renderFriendsList();
+        if(activeChatId === conn.peer) updateOnlineStatusUI(conn.peer);
     });
 }
 
 function connectTo(id) {
-    if(!id || id === myId) return;
-    if(connections[id] && connections[id].open) return;
+    if (!id || id === currentUser.id) return;
+    if (connections[id] && connections[id].open) return;
     const conn = peer.connect(id);
     setupConnection(conn);
 }
 
-// --- 3. 扫码与摄像头逻辑 (新功能) ---
-const qrOverlay = document.getElementById('qr-overlay');
-const scanBtn = document.getElementById('scan-btn');
-const closeCamBtn = document.getElementById('close-camera');
-let html5QrCode;
-
-scanBtn.addEventListener('click', () => {
-    qrOverlay.classList.remove('hidden');
-    startCamera();
-});
-
-closeCamBtn.addEventListener('click', () => {
-    stopCamera();
-    qrOverlay.classList.add('hidden');
-});
-
-function startCamera() {
-    html5QrCode = new Html5Qrcode("qr-reader");
-    const config = { fps: 10, qrbox: { width: 200, height: 200 } };
-    
-    // 优先使用后置摄像头
-    html5QrCode.start({ facingMode: "environment" }, config, onScanSuccess)
-    .catch(err => {
-        alert("无法启动摄像头，请检查权限");
-        qrOverlay.classList.add('hidden');
-    });
+function reconnectAll() {
+    friends.forEach(f => connectTo(f.id));
 }
 
-function stopCamera() {
-    if(html5QrCode) {
-        html5QrCode.stop().then(() => html5QrCode.clear());
+function updateOnlineStatusUI(id) {
+    const isOnline = connections[id] && connections[id].open;
+    if (id === activeChatId) {
+        statusBadge.className = isOnline ? 'status-indicator online' : 'status-indicator';
     }
 }
 
-function onScanSuccess(decodedText, decodedResult) {
-    // 扫码成功！
-    stopCamera();
-    qrOverlay.classList.add('hidden');
+// --- 5. 消息处理 ---
+function handleData(senderId, data) {
+    lastMsgSender = senderId;
     
-    // 震动反馈 (如果支持)
-    if(navigator.vibrate) navigator.vibrate(200);
+    // 播放声音
+    audioEl.play().catch(e => console.log('Audio blocked', e));
 
-    // 自动连接
-    document.getElementById('target-id-input').value = decodedText;
-    connectTo(decodedText);
-    showToast(`识别成功: ${decodedText}, 正在连接...`);
-    
-    // 稍微延迟跳转
-    setTimeout(() => switchView('view-friends'), 1000);
+    const msgObj = {
+        isSelf: false,
+        timestamp: Date.now()
+    };
+
+    if (data.type === 'text') {
+        msgObj.type = 'text';
+        msgObj.content = data.content;
+    } else if (data.type === 'file') {
+        msgObj.type = 'file';
+        // 转换 ArrayBuffer 为 Blob URL
+        const blob = new Blob([data.file], { type: data.fileType });
+        msgObj.content = { name: data.fileName, url: URL.createObjectURL(blob) };
+    }
+
+    addMessageToHistory(senderId, msgObj);
+
+    // 如果当前正在和这个人聊天，直接追加 DOM
+    if (activeChatId === senderId) {
+        appendMsgToDOM(msgObj);
+    } else {
+        showToast(`收到 ${senderId} 的消息`);
+    }
 }
 
-// --- 4. 好友列表渲染 (Kakao 风格) ---
-let friends = JSON.parse(localStorage.getItem('sloth_friends_v2')) || [];
-
-function renderFriends() {
-    const list = document.getElementById('friends-list');
-    document.getElementById('friend-count').innerText = friends.length;
-    list.innerHTML = '';
+function sendMessage(type, payload) {
+    if (!activeChatId) return;
+    const conn = connections[activeChatId];
     
+    // 即使离线也可以发(存本地)，但为了简单，目前要求在线
+    // 优化: 可以在UI上显示“离线消息已排队”，这里为了演示仅直接发
+    
+    const msgObj = { isSelf: true, timestamp: Date.now(), type: type };
+    
+    if (type === 'text') {
+        if(conn && conn.open) conn.send({ type: 'text', content: payload });
+        msgObj.content = payload;
+    } else if (type === 'file') {
+        if(conn && conn.open) conn.send({ 
+            type: 'file', file: payload, fileName: payload.name, fileType: payload.type 
+        });
+        msgObj.content = { name: payload.name, url: '#' };
+    }
+
+    addMessageToHistory(activeChatId, msgObj);
+    appendMsgToDOM(msgObj);
+}
+
+// --- 6. 渲染逻辑 ---
+function renderFriendsList() {
+    const container = document.getElementById('friends-list-container');
+    container.innerHTML = '';
+    document.getElementById('friend-count').innerText = friends.length;
+
     friends.forEach(f => {
         const isOnline = connections[f.id] && connections[f.id].open;
         const div = document.createElement('div');
-        div.className = 'kakao-item';
+        div.className = 'k-list-item';
         div.innerHTML = `
-            <img src="${getAvatar(f.id)}" class="avatar-kakao">
-            <div class="info">
-                <div class="name">${f.id}</div>
-                <div class="status-msg">${isOnline ? '🟢 在线' : '⚪ 离线'}</div>
+            <img src="${getAvatar(f.id)}" class="avatar-squircle">
+            <div class="item-content">
+                <div class="item-title">${f.nickname || f.id}</div>
+                <div class="item-subtitle">
+                    <span class="status-dot ${isOnline ? 'on' : ''}"></span>
+                    ${isOnline ? '在线' : '离线'}
+                </div>
             </div>
+            <div style="color:#ccc; font-size:20px;">⋮</div>
         `;
-        div.addEventListener('click', () => openChat(f.id));
-        list.appendChild(div);
+        
+        // 点击进入聊天
+        div.addEventListener('click', (e) => {
+            // 如果点击的是菜单按钮 (简单模拟)
+            if(e.target.innerText === '⋮') {
+                e.stopPropagation();
+                openRenameModal(f.id);
+            } else {
+                openChat(f.id);
+            }
+        });
+        container.appendChild(div);
     });
 }
 
-function addFriendToList(id) {
-    if (friends.find(f => f.id === id)) return;
-    friends.push({ id: id, addedAt: Date.now() });
-    localStorage.setItem('sloth_friends_v2', JSON.stringify(friends));
-    renderFriends();
+function renderChatMessages(id) {
+    const container = document.getElementById('messages-container');
+    container.innerHTML = '';
+    const msgs = chatHistory[id] || [];
+    msgs.forEach(appendMsgToDOM);
+    setTimeout(() => container.scrollTop = container.scrollHeight, 100);
 }
 
-// --- 5. 聊天与消息 ---
-const messagesArea = document.getElementById('messages-area');
-const notificationSound = document.getElementById('notification-sound');
-
-function handleIncomingData(senderId, data) {
-    // 播放提示音
-    notificationSound.play().catch(()=>{});
-    showToast(`收到 ${senderId} 的消息`);
-
-    if (activeChatId === senderId) {
-        if (data.type === 'text') appendMessage('text', data.content, false);
-        else if (data.type === 'file') {
-            const blob = new Blob([data.file], { type: data.fileType });
-            const url = URL.createObjectURL(blob);
-            appendMessage('file', { name: data.fileName, url: url }, false);
-        }
-    }
-}
-
-function openChat(id) {
-    activeChatId = id;
-    document.getElementById('chat-partner-name').innerText = id;
-    messagesArea.innerHTML = '';
-    switchView('view-chat');
-    
-    const isOnline = connections[id] && connections[id].open;
-    updateChatStatus(id, isOnline);
-    if(!isOnline) connectTo(id);
-}
-
-function updateChatStatus(id, isOnline) {
-    if(activeChatId !== id) return;
-    const dot = document.getElementById('chat-status-dot');
-    dot.className = isOnline ? 'status-dot online' : 'status-dot';
-}
-
-function appendMessage(type, content, isSelf) {
+function appendMsgToDOM(msg) {
+    const container = document.getElementById('messages-container');
     const div = document.createElement('div');
-    div.className = `message ${isSelf ? 'self' : 'other'}`;
-    let html = '';
-    if(type === 'text') html = `<div class="msg-bubble">${content}</div>`;
-    else html = `<div class="msg-bubble"><a href="${content.url}" download="${content.name}" style="color:inherit">📂 ${content.name}</a></div>`;
-    div.innerHTML = html;
-    messagesArea.appendChild(div);
-    messagesArea.scrollTop = messagesArea.scrollHeight;
-}
-
-// 发送逻辑
-document.getElementById('send-btn').addEventListener('click', () => {
-    const input = document.getElementById('msg-input');
-    const val = input.value.trim();
-    if(val && activeChatId && connections[activeChatId]) {
-        connections[activeChatId].send({type:'text', content:val});
-        appendMessage('text', val, true);
-        input.value = '';
-    }
-});
-
-document.getElementById('file-input').addEventListener('change', (e) => {
-    const file = e.target.files[0];
-    if(file && activeChatId && connections[activeChatId]) {
-        connections[activeChatId].send({type:'file', file:file, fileName:file.name, fileType:file.type});
-        appendMessage('file', {name: file.name, url: '#'}, true);
-    }
-});
-document.getElementById('folder-btn').addEventListener('click', () => document.getElementById('file-input').click());
-
-// --- 6. 辅助功能 ---
-function switchView(id) {
-    document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
-    document.getElementById(id).classList.add('active');
+    div.className = `message-row ${msg.isSelf ? 'self' : 'other'}`;
     
-    document.querySelectorAll('.tab-item').forEach(t => {
-        t.classList.toggle('active', t.dataset.target === id);
-    });
-    
-    // 聊天时不显示底部Tab
-    document.getElementById('main-nav').style.display = (id === 'view-chat') ? 'none' : 'flex';
+    if (msg.type === 'text') {
+        div.innerHTML = `<div class="chat-bubble">${msg.content}</div>`;
+    } else {
+        div.innerHTML = `
+            <div class="chat-bubble">
+                <a href="${msg.content.url}" download="${msg.content.name}" class="file-msg">
+                    <span>📄</span> ${msg.content.name}
+                </a>
+            </div>`;
+    }
+    container.appendChild(div);
+    container.scrollTop = container.scrollHeight;
 }
-document.querySelectorAll('.tab-item').forEach(b => b.addEventListener('click', () => switchView(b.dataset.target)));
-document.getElementById('back-btn').addEventListener('click', () => switchView('view-friends'));
-document.getElementById('add-friend-btn').addEventListener('click', () => {
-    const id = document.getElementById('target-id-input').value;
-    if(id) { connectTo(id); switchView('view-friends'); }
+
+// 辅助函数
+const getAvatar = (seed) => `https://api.dicebear.com/7.x/notionists/svg?seed=${seed}&backgroundColor=ffe0a5`;
+function addFriend(id) {
+    if (friends.find(f => f.id === id)) return;
+    friends.push({ id: id, nickname: '新朋友 ' + id.substr(-4) });
+    localStorage.setItem(`sloth_friends_${DB_VERSION}`, JSON.stringify(friends));
+    renderFriendsList();
+}
+
+// --- 7. 交互绑定 ---
+
+// 发送文字
+const input = document.getElementById('chat-input');
+const sendBtn = document.getElementById('chat-send-btn');
+function triggerSend() {
+    const txt = input.value.trim();
+    if(txt) { sendMessage('text', txt); input.value = ''; }
+}
+sendBtn.addEventListener('click', triggerSend);
+input.addEventListener('keypress', e => { if(e.key === 'Enter') triggerSend(); });
+
+// 发送文件 (修复点击问题)
+const fileBtn = document.getElementById('add-file-btn');
+const fileInput = document.getElementById('real-file-input');
+fileBtn.addEventListener('click', () => {
+    fileInput.click(); // 显式触发
+});
+fileInput.addEventListener('change', (e) => {
+    if (e.target.files[0]) sendMessage('file', e.target.files[0]);
+    e.target.value = '';
 });
 
-function showToast(msg) {
-    const t = document.getElementById('incoming-alert');
-    t.querySelector('span:last-child').innerText = msg;
-    t.classList.remove('hidden');
-    setTimeout(() => t.classList.add('hidden'), 3000);
-}
+// 模态框逻辑
+const qrModal = document.getElementById('qr-overlay');
+const addModal = document.getElementById('add-overlay');
+const renameModal = document.getElementById('rename-overlay');
 
-function reconnectFriends() {
-    friends.forEach(f => connectTo(f.id));
-    renderFriends();
+document.getElementById('scan-btn').addEventListener('click', () => {
+    qrModal.classList.remove('hidden');
+    startScan();
+});
+function closeScanner() { qrModal.classList.add('hidden'); stopScan(); }
+
+document.getElementById('add-id-btn').addEventListener('click', () => addModal.classList.remove('hidden'));
+function closeAddModal() { addModal.classList.add('hidden'); }
+document.getElementById('confirm-add-btn').addEventListener('click', () => {
+    const id = document.getElementById('manual-id-input').value.trim();
+    if(id) { addFriend(id); connectTo(id); closeAddModal(); showToast('已添加'); }
+});
+
+// 重命名逻辑
+let renamingId = null;
+function openRenameModal(id) {
+    renamingId = id;
+    const f = friends.find(x => x.id === id);
+    document.getElementById('rename-input').value = f ? f.nickname : '';
+    renameModal.classList.remove('hidden');
 }
+function closeRenameModal() { renameModal.classList.add('hidden'); }
+document.getElementById('confirm-rename-btn').addEventListener('click', () => {
+    const name = document.getElementById('rename-input').value.trim();
+    if(name && renamingId) updateFriendName(renamingId, name);
+    closeRenameModal();
+});
+
+// 扫码器逻辑
+let html5QrCode;
+function startScan() {
+    html5QrCode = new Html5Qrcode("qr-reader");
+    html5QrCode.start({ facingMode: "environment" }, { fps: 10, qrbox: 250 }, (txt) => {
+        closeScanner();
+        addFriend(txt);
+        connectTo(txt);
+        showToast('扫码成功');
+    }).catch(err => alert('相机启动失败'));
+}
+function stopScan() { if(html5QrCode) html5QrCode.stop().then(()=>html5QrCode.clear()); }
 
 // 启动
 initNetwork();
-renderFriends();
+renderFriendsList();
 
 // PWA WakeLock
 document.addEventListener('click', async () => {
     try { if ('wakeLock' in navigator) await navigator.wakeLock.request('screen'); } catch(e){}
 }, { once: true });
 
-// SW Register
+// SW
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js');
