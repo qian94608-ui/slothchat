@@ -1,0 +1,120 @@
+:root {
+    --primary-green: #2ecc71;
+    --dark-green: #27ae60;
+    --bg-color: #f4fcf6;
+    --card-bg: #ffffff;
+    --text-main: #2c3e50;
+    --text-light: #95a5a6;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; user-select: none; -webkit-tap-highlight-color: transparent; }
+body {
+    font-family: 'Nunito', sans-serif;
+    background-color: var(--bg-color);
+    color: var(--text-main);
+    height: 100vh;
+    display: flex; flex-direction: column; overflow: hidden;
+}
+
+/* Header */
+.app-header {
+    padding: 15px 20px; background: var(--card-bg);
+    display: flex; justify-content: space-between; align-items: center;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.05); z-index: 10;
+}
+.logo-area { display: flex; align-items: center; gap: 8px; font-weight: 800; color: var(--dark-green); font-size: 1.2rem; }
+.sloth-icon { font-size: 1.5rem; }
+
+.status-badge { font-size: 0.7rem; padding: 4px 8px; border-radius: 12px; background: #e0e0e0; color: #666; transition: 0.3s; }
+.status-badge.connected { background: #d5f5e3; color: var(--dark-green); }
+.status-badge.error { background: #fadbd8; color: #c0392b; }
+
+/* Main Views */
+.app-container { flex: 1; position: relative; overflow: hidden; }
+.view {
+    position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+    background: var(--bg-color);
+    transform: translateX(100%); transition: transform 0.3s cubic-bezier(0.25, 1, 0.5, 1);
+    display: flex; flex-direction: column;
+}
+.view.active { transform: translateX(0); }
+
+/* ID Card */
+#view-identity { padding: 20px; align-items: center; overflow-y: auto; }
+.id-card {
+    background: var(--card-bg); width: 100%; max-width: 340px;
+    border-radius: 24px; padding: 30px; text-align: center;
+    box-shadow: 0 8px 20px rgba(46, 204, 113, 0.15); margin-bottom: 30px;
+    position: relative; overflow: hidden;
+}
+.id-card::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 8px; background: var(--primary-green); }
+.avatar-container img { width: 80px; height: 80px; border-radius: 50%; background: #e8f8f5; border: 3px solid var(--primary-green); }
+.qr-box { margin: 20px auto; padding: 10px; background: white; display: inline-block; border-radius: 8px; }
+.id-display { background: #f0f3f4; padding: 10px; border-radius: 8px; display: flex; justify-content: center; gap: 10px; margin-top: 10px; }
+.id-display .code { font-family: monospace; font-weight: bold; }
+
+.input-group { display: flex; gap: 10px; margin-bottom: 10px; width: 100%; max-width: 340px; }
+input { flex: 1; padding: 12px; border: 2px solid #eee; border-radius: 12px; outline: none; }
+input:focus { border-color: var(--primary-green); }
+.primary-btn {
+    width: 100%; max-width: 340px; background: var(--primary-green); color: white;
+    border: none; padding: 14px; border-radius: 12px; font-weight: bold; cursor: pointer;
+    box-shadow: 0 4px 10px rgba(46, 204, 113, 0.3);
+}
+
+/* Friends List */
+.friends-container { padding: 20px; flex: 1; overflow-y: auto; }
+.friend-item {
+    display: flex; align-items: center; gap: 15px; background: white; padding: 15px; margin-bottom: 12px;
+    border-radius: 16px; box-shadow: 0 2px 8px rgba(0,0,0,0.03); cursor: pointer;
+}
+.friend-item:active { background: #f9f9f9; }
+.friend-name { font-weight: bold; color: var(--text-main); }
+.friend-id { font-size: 0.8rem; color: var(--text-light); }
+
+/* Chat UI */
+.chat-navbar { padding: 10px 15px; background: white; display: flex; align-items: center; gap: 15px; border-bottom: 1px solid #eee; }
+.icon-btn { border: none; background: none; font-size: 1.5rem; cursor: pointer; }
+.chat-title { flex: 1; display: flex; align-items: center; gap: 10px; }
+.small-avatar { width: 36px; height: 36px; border-radius: 50%; }
+.dot-offline { color: #ccc; font-size: 1.2rem; margin-left: 5px; line-height: 0; }
+.dot-online { color: #2ecc71; font-size: 1.2rem; margin-left: 5px; text-shadow: 0 0 5px #2ecc71; line-height: 0; }
+
+.messages-area {
+    flex: 1; padding: 20px; overflow-y: auto; display: flex; flex-direction: column; gap: 15px;
+    background-color: #fcfdfd;
+}
+.message { max-width: 80%; display: flex; flex-direction: column; }
+.message.self { align-self: flex-end; align-items: flex-end; }
+.message.other { align-self: flex-start; align-items: flex-start; }
+.msg-bubble { padding: 12px 16px; border-radius: 18px; font-size: 0.95rem; line-height: 1.4; box-shadow: 0 1px 3px rgba(0,0,0,0.05); }
+.message.self .msg-bubble { background: var(--primary-green); color: white; border-bottom-right-radius: 4px; }
+.message.other .msg-bubble { background: white; color: var(--text-main); border-bottom-left-radius: 4px; }
+
+/* File Card */
+.file-card { display: flex; align-items: center; gap: 8px; text-decoration: none; }
+.file-card a { color: inherit; text-decoration: none; font-weight: bold; }
+
+/* Input Bar */
+.chat-input-bar { padding: 10px 15px; background: white; display: flex; align-items: center; gap: 10px; border-top: 1px solid #eee; }
+.tool-btn { font-size: 1.4rem; background: none; border: none; cursor: pointer; }
+#msg-input { border-radius: 20px; background: #f5f5f5; border: none; }
+.send-btn { border: none; background: var(--primary-green); color: white; width: 40px; height: 40px; border-radius: 50%; cursor: pointer; }
+
+/* Bottom Nav */
+.bottom-nav { display: flex; background: white; padding: 10px 0; border-top: 1px solid #eee; }
+.nav-item { flex: 1; border: none; background: white; display: flex; flex-direction: column; align-items: center; color: var(--text-light); gap: 4px; cursor: pointer; }
+.nav-item.active { color: var(--primary-green); font-weight: bold; }
+
+/* Alerts */
+.incoming-alert {
+    position: fixed; bottom: 80px; right: 20px; background: var(--text-main); color: white;
+    padding: 10px 15px; border-radius: 30px; display: flex; align-items: center; gap: 8px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.3); z-index: 100; transition: opacity 0.3s;
+}
+.incoming-alert.hidden { opacity: 0; pointer-events: none; }
+.icon-flash { animation: flash 1s infinite; }
+@keyframes flash { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
+
+/* PC Adaptive */
+@media (min-width: 768px) { body { max-width: 450px; margin: 0 auto; border: 1px solid #eee; } }

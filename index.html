@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="theme-color" content="#2ecc71">
+    <title>SlothDrop</title>
+    <link rel="stylesheet" href="style.css">
+    <link rel="manifest" href="manifest.json">
+    <link rel="icon" type="image/png" href="https://cdn-icons-png.flaticon.com/512/375/375225.png">
+    
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+    <script src="https://unpkg.com/peerjs@1.5.1/dist/peerjs.min.js"></script>
+</head>
+<body>
+
+    <header class="app-header">
+        <div class="logo-area">
+            <span class="sloth-icon">🦥</span>
+            <h1>SlothDrop</h1>
+        </div>
+        <div id="connection-status" class="status-badge">离线</div>
+    </header>
+
+    <main class="app-container">
+        
+        <section id="view-identity" class="view active">
+            <div class="id-card">
+                <div class="avatar-container">
+                    <img id="my-avatar" src="" alt="Avatar">
+                </div>
+                <h2>我的名片</h2>
+                <div id="qrcode" class="qr-box"></div>
+                <div class="id-display">
+                    <span class="label">ID:</span>
+                    <span id="my-id-text" class="code">初始化中...</span>
+                </div>
+                <p class="hint">这是您的永久设备ID，扫码即可连接</p>
+            </div>
+
+            <div class="add-friend-section">
+                <h3>添加好友</h3>
+                <div class="input-group">
+                    <input type="text" id="target-id-input" placeholder="输入对方 ID" autocomplete="off">
+                </div>
+                <button id="add-friend-btn" class="primary-btn">🔗 添加并连接</button>
+            </div>
+        </section>
+
+        <section id="view-friends" class="view">
+            <div class="list-header">已保存的好友</div>
+            <div id="friends-list" class="friends-container">
+                </div>
+        </section>
+
+        <section id="view-chat" class="view">
+            <div class="chat-navbar">
+                <button id="back-btn" class="icon-btn">←</button>
+                <div class="chat-title">
+                    <img id="chat-partner-avatar" src="" class="small-avatar">
+                    <div class="chat-meta">
+                        <span id="chat-partner-name">User</span>
+                        <span id="chat-status-dot" class="dot-offline">●</span>
+                    </div>
+                </div>
+            </div>
+            
+            <div id="messages-area" class="messages-area">
+                </div>
+
+            <div class="chat-input-bar">
+                <input type="file" id="file-input" hidden>
+                <button id="folder-btn" class="tool-btn">📂</button>
+                <input type="text" id="msg-input" placeholder="输入消息..." autocomplete="off">
+                <button id="send-btn" class="send-btn">➤</button>
+            </div>
+        </section>
+
+    </main>
+
+    <nav class="bottom-nav" id="main-nav">
+        <button class="nav-item active" data-target="view-identity"><span>💳</span>身份</button>
+        <button class="nav-item" data-target="view-friends"><span>👥</span>好友</button>
+    </nav>
+
+    <div id="incoming-alert" class="incoming-alert hidden">
+        <div class="icon-flash">📩</div>
+        <span class="alert-text">Message Coming</span>
+    </div>
+
+    <audio id="notification-sound" src="https://assets.mixkit.co/sfx/preview/mixkit-software-interface-start-2574.mp3" preload="auto"></audio>
+
+    <script src="app.js"></script>
+</body>
+</html>
