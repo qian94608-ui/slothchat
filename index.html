@@ -3,92 +3,120 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <meta name="theme-color" content="#2ecc71">
+    <meta name="theme-color" content="#78C2AD">
     <title>SlothDrop</title>
+    <link href="https://fonts.googleapis.com/css2?family=Varela+Round&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="style.css">
     <link rel="manifest" href="manifest.json">
     <link rel="icon" type="image/png" href="https://cdn-icons-png.flaticon.com/512/375/375225.png">
     
     <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
     <script src="https://unpkg.com/peerjs@1.5.1/dist/peerjs.min.js"></script>
+    <script src="https://unpkg.com/html5-qrcode" type="text/javascript"></script>
 </head>
 <body>
 
-    <header class="app-header">
-        <div class="logo-area">
-            <span class="sloth-icon">🦥</span>
-            <h1>SlothDrop</h1>
+    <header class="ac-header">
+        <div class="header-content">
+            <span class="app-icon">🍃</span>
+            <span class="app-name">SlothDrop</span>
         </div>
-        <div id="connection-status" class="status-badge">离线</div>
+        <div id="connection-status" class="status-pill offline">离线</div>
     </header>
 
-    <main class="app-container">
+    <main class="ac-container">
         
         <section id="view-identity" class="view active">
-            <div class="id-card">
-                <div class="avatar-container">
-                    <img id="my-avatar" src="" alt="Avatar">
+            <div class="ac-card id-card-wrapper">
+                <div class="card-hole"></div> <div class="id-header">
+                    <img id="my-avatar" class="avatar-large" src="" alt="Avatar">
+                    <div class="id-text-group">
+                        <h2>我的护照</h2>
+                        <p class="island-name">Sloth Island</p>
+                    </div>
                 </div>
-                <h2>我的名片</h2>
-                <div id="qrcode" class="qr-box"></div>
-                <div class="id-display">
-                    <span class="label">ID:</span>
-                    <span id="my-id-text" class="code">初始化中...</span>
+                
+                <div class="qr-frame">
+                    <div id="qrcode"></div>
                 </div>
-                <p class="hint">这是您的永久设备ID，扫码即可连接</p>
+
+                <div class="id-number-box">
+                    <span class="label">PASSPORT ID</span>
+                    <span id="my-id-text" class="code-text">...</span>
+                </div>
             </div>
 
-            <div class="add-friend-section">
-                <h3>添加好友</h3>
-                <div class="input-group">
-                    <input type="text" id="target-id-input" placeholder="输入对方 ID" autocomplete="off">
-                </div>
-                <button id="add-friend-btn" class="primary-btn">🔗 添加并连接</button>
+            <div class="ac-input-bar">
+                <input type="text" id="target-id-input" placeholder="输入岛民 ID..." autocomplete="off">
+                <button id="scan-btn" class="icon-btn-square">📷</button>
             </div>
+            <button id="add-friend-btn" class="nook-btn">添加好友</button>
         </section>
 
         <section id="view-friends" class="view">
-            <div class="list-header">已保存的好友</div>
-            <div id="friends-list" class="friends-container">
+            <div class="kakao-list-container">
+                <div class="list-section-title">我</div>
+                <div class="kakao-item me-item">
+                    <img id="my-avatar-small" src="" class="avatar-kakao">
+                    <div class="info">
+                        <div class="name">我 (Me)</div>
+                        <div class="status-msg">今天也是悠闲的一天~</div>
+                    </div>
                 </div>
+
+                <div class="list-section-title">朋友 <span id="friend-count">0</span></div>
+                <div id="friends-list" class="kakao-list-body">
+                    </div>
+            </div>
         </section>
 
         <section id="view-chat" class="view">
-            <div class="chat-navbar">
-                <button id="back-btn" class="icon-btn">←</button>
-                <div class="chat-title">
-                    <img id="chat-partner-avatar" src="" class="small-avatar">
-                    <div class="chat-meta">
-                        <span id="chat-partner-name">User</span>
-                        <span id="chat-status-dot" class="dot-offline">●</span>
-                    </div>
+            <div class="chat-header-bar">
+                <button id="back-btn" class="nav-back">❮</button>
+                <div class="chat-partner-info">
+                    <span id="chat-partner-name">User</span>
+                    <span id="chat-status-dot" class="status-dot">●</span>
                 </div>
+                <button class="nav-menu">⋮</button>
             </div>
             
-            <div id="messages-area" class="messages-area">
-                </div>
+            <div id="messages-area" class="messages-area"></div>
 
-            <div class="chat-input-bar">
+            <div class="ac-chat-input">
                 <input type="file" id="file-input" hidden>
-                <button id="folder-btn" class="tool-btn">📂</button>
-                <input type="text" id="msg-input" placeholder="输入消息..." autocomplete="off">
-                <button id="send-btn" class="send-btn">➤</button>
+                <button id="folder-btn" class="chat-tool-btn">📂</button>
+                <input type="text" id="msg-input" placeholder="说点什么..." autocomplete="off">
+                <button id="send-btn" class="chat-send-btn">➤</button>
             </div>
         </section>
 
     </main>
 
-    <nav class="bottom-nav" id="main-nav">
-        <button class="nav-item active" data-target="view-identity"><span>💳</span>身份</button>
-        <button class="nav-item" data-target="view-friends"><span>👥</span>好友</button>
+    <nav class="ac-tab-bar" id="main-nav">
+        <button class="tab-item active" data-target="view-identity">
+            <div class="tab-icon">💳</div>
+            <span>护照</span>
+        </button>
+        <button class="tab-item" data-target="view-friends">
+            <div class="tab-icon">👥</div>
+            <span>岛民</span>
+        </button>
     </nav>
 
-    <div id="incoming-alert" class="incoming-alert hidden">
-        <div class="icon-flash">📩</div>
-        <span class="alert-text">Message Coming</span>
+    <div id="qr-overlay" class="overlay hidden">
+        <div class="camera-modal">
+            <h3>扫描二维码</h3>
+            <div id="qr-reader" style="width: 100%;"></div>
+            <button id="close-camera" class="close-btn">关闭</button>
+        </div>
     </div>
 
-    <audio id="notification-sound" src="https://assets.mixkit.co/sfx/preview/mixkit-software-interface-start-2574.mp3" preload="auto"></audio>
+    <div id="incoming-alert" class="toast hidden">
+        <span class="toast-icon">📨</span>
+        <span>新消息到达!</span>
+    </div>
+
+    <audio id="notification-sound" src="https://assets.mixkit.co/sfx/preview/mixkit-positive-notification-951.mp3" preload="auto"></audio>
 
     <script src="app.js"></script>
 </body>
