@@ -1,381 +1,189 @@
-// --- 1. 数据层 (Model) ---
-const DB_VERSION = 'v3';
-let currentUser = JSON.parse(localStorage.getItem(`sloth_user_${DB_VERSION}`)) || {
-    id: 'SL-' + Math.floor(100000 + Math.random() * 900000),
-    avatar: `https://api.dicebear.com/7.x/notionists/svg?seed=${Date.now()}&backgroundColor=ffe0a5`
-};
-localStorage.setItem(`sloth_user_${DB_VERSION}`, JSON.stringify(currentUser));
-
-// 好友列表: [{id, nickname, addedAt}]
-let friends = JSON.parse(localStorage.getItem(`sloth_friends_${DB_VERSION}`)) || [];
-
-// 聊天记录: { friendId: [ { type, content, isSelf, timestamp } ] }
-let chatHistory = JSON.parse(localStorage.getItem(`sloth_history_${DB_VERSION}`)) || {};
-
-function saveHistory() {
-    localStorage.setItem(`sloth_history_${DB_VERSION}`, JSON.stringify(chatHistory));
+:root {
+    --bg-color: #F8F8F8;
+    --card-bg: #FFFFFF;
+    --primary: #111111;
+    --accent: #007AFF; /* iOS Blue */
+    --text-main: #111111;
+    --text-sub: #888888;
+    --border: #E5E5E5;
+    --font: 'Inter', sans-serif;
 }
 
-function addMessageToHistory(friendId, msg) {
-    if (!chatHistory[friendId]) chatHistory[friendId] = [];
-    chatHistory[friendId].push(msg);
-    saveHistory();
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; outline: none; }
+body {
+    margin: 0; padding: 0; font-family: var(--font);
+    background: var(--bg-color); color: var(--text-main);
+    height: 100vh; overflow: hidden;
 }
 
-function updateFriendName(id, newName) {
-    const f = friends.find(x => x.id === id);
-    if (f) {
-        f.nickname = newName;
-        localStorage.setItem(`sloth_friends_${DB_VERSION}`, JSON.stringify(friends));
-        renderFriendsList();
-        if (activeChatId === id) document.getElementById('chat-partner-name').innerText = newName;
-    }
+/* 页面架构 */
+#app-root { position: relative; width: 100%; height: 100%; overflow: hidden; }
+.page {
+    position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+    background: var(--bg-color); display: flex; flex-direction: column;
+    transform: translateX(100%); transition: transform 0.35s cubic-bezier(0.32, 0.72, 0, 1);
+    z-index: 1;
+}
+.page.active { transform: translateX(0); }
+.page.right-sheet { z-index: 20; background: #fff; }
+
+/* Header */
+.main-header {
+    height: 60px; padding: 0 24px; display: flex; justify-content: space-between; align-items: center;
+    background: var(--bg-color);
+}
+.header-brand { font-weight: 800; font-size: 20px; letter-spacing: -0.5px; }
+.header-actions { display: flex; gap: 16px; }
+.icon-btn { background: none; border: none; cursor: pointer; color: var(--primary); padding: 0; }
+
+/* Tab Content */
+.tab-content { display: none; flex: 1; overflow-y: auto; padding: 20px 24px 80px 24px; }
+.tab-content.active-tab { display: block; }
+.list-title { font-size: 13px; font-weight: 600; color: var(--text-sub); margin-bottom: 16px; text-transform: uppercase; letter-spacing: 1px; }
+
+/* 列表样式 */
+.k-list-item { display: flex; align-items: center; gap: 16px; padding: 12px 0; cursor: pointer; }
+.avatar-circle { width: 52px; height: 52px; border-radius: 50%; object-fit: cover; background: #eee; }
+.item-content { flex: 1; }
+.item-title { font-weight: 600; font-size: 16px; margin-bottom: 4px; }
+.item-subtitle { color: var(--text-sub); font-size: 14px; }
+.divider { height: 1px; background: var(--border); margin: 10px 0 20px 0; }
+
+/* --- 高级名片设计 (Premium Card) --- */
+.premium-card-wrapper { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; }
+.premium-card {
+    width: 100%; max-width: 340px; height: 210px;
+    background: linear-gradient(135deg, #1a1a1a 0%, #000000 100%);
+    border-radius: 16px; padding: 24px; color: #fff;
+    position: relative; overflow: hidden;
+    box-shadow: 0 20px 40px -10px rgba(0,0,0,0.3);
+    display: flex; flex-direction: column; justify-content: space-between;
+}
+.card-top { display: flex; justify-content: space-between; align-items: center; }
+.card-chip {
+    width: 36px; height: 26px; background: linear-gradient(135deg, #e6cbaec4 0%, #d4af37 100%);
+    border-radius: 4px; position: relative;
+}
+.card-brand { font-size: 12px; letter-spacing: 2px; font-weight: 600; opacity: 0.8; }
+.card-body { display: flex; justify-content: space-between; align-items: flex-end; }
+.card-info { display: flex; flex-direction: column; }
+.card-label { font-size: 10px; color: #888; margin-bottom: 4px; letter-spacing: 1px; }
+.card-value { font-family: monospace; font-size: 16px; letter-spacing: 1px; }
+.card-qr {
+    background: #fff; padding: 4px; border-radius: 4px;
+    width: 70px; height: 70px; display: flex; justify-content: center; align-items: center;
+}
+.card-qr img { width: 100%; display: block; }
+.card-footer { display: flex; justify-content: space-between; font-size: 10px; opacity: 0.6; margin-top: 10px; }
+.card-shine {
+    position: absolute; top: -50%; left: -50%; width: 200%; height: 200%;
+    background: linear-gradient(to bottom right, rgba(255,255,255,0) 0%, rgba(255,255,255,0.05) 40%, rgba(255,255,255,0) 100%);
+    pointer-events: none; transform: rotate(30deg);
+}
+.card-hint { margin-top: 24px; color: var(--text-sub); font-size: 13px; letter-spacing: 1px; }
+
+/* 底部导航 */
+.bottom-nav {
+    position: absolute; bottom: 0; width: 100%; height: 70px; background: rgba(255,255,255,0.9);
+    backdrop-filter: blur(10px); border-top: 1px solid var(--border);
+    display: flex; justify-content: center; gap: 40px; padding-bottom: env(safe-area-inset-bottom);
+}
+.nav-btn {
+    border: none; background: none; font-weight: 600; font-size: 14px; color: var(--text-sub); cursor: pointer;
+    position: relative;
+}
+.nav-btn.active { color: var(--primary); }
+.nav-btn.active::after {
+    content: ''; position: absolute; bottom: 10px; left: 50%; transform: translateX(-50%);
+    width: 4px; height: 4px; background: var(--primary); border-radius: 50%;
 }
 
-// --- 2. 初始化 UI ---
-document.getElementById('my-avatar-small').src = currentUser.avatar;
-document.getElementById('my-avatar-large').src = currentUser.avatar;
-document.getElementById('my-id-display').innerText = `ID: ${currentUser.id}`;
-document.getElementById('card-id-text').innerText = currentUser.id;
-
-// 生成二维码
-new QRCode(document.getElementById("qrcode"), {
-    text: currentUser.id, width: 160, height: 160, colorDark : "#191919", colorLight : "#ffffff"
-});
-
-// --- 3. 路由与导航 (History API 修复侧滑返回) ---
-let activeChatId = null;
-
-function showToast(msg, duration = 2000) {
-    const t = document.getElementById('toast');
-    t.innerText = msg;
-    t.classList.remove('hidden');
-    setTimeout(() => t.classList.add('hidden'), duration);
-    // 点击 Toast 跳转 (如果是收到消息)
-    t.onclick = () => {
-        if(lastMsgSender && lastMsgSender !== activeChatId) openChat(lastMsgSender);
-    };
+/* 聊天窗口 */
+.chat-header {
+    height: 50px; display: flex; align-items: center; justify-content: space-between;
+    padding: 0 16px; border-bottom: 1px solid var(--border); background: #fff;
 }
+.back-text { font-size: 16px; color: var(--primary); background: none; border: none; font-weight: 500; cursor: pointer; }
+.chat-info { font-weight: 600; font-size: 16px; display: flex; align-items: center; gap: 6px; }
+.dot { width: 6px; height: 6px; background: #4cd964; border-radius: 50%; opacity: 0; transition: opacity 0.3s; }
+.dot.online { opacity: 1; }
+.menu-btn { font-size: 20px; background: none; border: none; cursor: pointer; }
 
-// 切换主页面 Tab
-document.querySelectorAll('.tab-btn').forEach(btn => {
-    btn.addEventListener('click', () => {
-        document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
-        document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active-tab'));
-        btn.classList.add('active');
-        document.getElementById(btn.dataset.target).classList.add('active-tab');
-        
-        // 更改 Header 标题
-        document.getElementById('header-title').innerText = btn.dataset.title;
-    });
-});
+.messages-container { flex: 1; padding: 20px 16px; overflow-y: auto; display: flex; flex-direction: column; gap: 24px; }
 
-// 打开聊天窗口 (Push State)
-function openChat(friendId) {
-    activeChatId = friendId;
-    const friend = friends.find(f => f.id === friendId) || { nickname: friendId };
-    
-    document.getElementById('chat-partner-name').innerText = friend.nickname || friendId;
-    renderChatMessages(friendId);
-    
-    // 更新在线状态UI
-    updateOnlineStatusUI(friendId);
+/* 消息气泡 */
+.msg-row { display: flex; flex-direction: column; max-width: 80%; }
+.msg-row.self { align-self: flex-end; align-items: flex-end; }
+.msg-row.other { align-self: flex-start; align-items: flex-start; }
 
-    // 动画入场
-    const chatPage = document.getElementById('view-chat');
-    chatPage.classList.add('active');
-
-    // **核心修复**: 添加历史记录，拦截浏览器返回按键
-    window.history.pushState({ page: 'chat', id: friendId }, "Chat", "#chat");
+.bubble {
+    padding: 12px 16px; border-radius: 18px; font-size: 15px; line-height: 1.5;
+    background: #F2F2F7; color: #000; position: relative;
 }
+.msg-row.self .bubble { background: var(--primary); color: #fff; }
 
-// 关闭聊天窗口
-function closeChat() {
-    document.getElementById('view-chat').classList.remove('active');
-    activeChatId = null;
+/* 贴纸样式 */
+.sticker-img { width: 120px; height: 120px; object-fit: contain; }
+
+/* 文件卡片与进度条 */
+.file-card { width: 220px; background: #fff; border: 1px solid var(--border); border-radius: 12px; padding: 12px; display: flex; flex-direction: column; gap: 8px; }
+.file-info { display: flex; align-items: center; gap: 10px; font-size: 14px; font-weight: 500; color: #000; }
+.file-icon { font-size: 24px; }
+.progress-track { width: 100%; height: 4px; background: #eee; border-radius: 2px; overflow: hidden; }
+.progress-bar { height: 100%; background: #007AFF; width: 0%; transition: width 0.1s; }
+.file-meta { font-size: 10px; color: #888; display: flex; justify-content: space-between; }
+.preview-img { width: 100%; border-radius: 8px; margin-top: 5px; display: block; }
+
+/* 底部输入区 */
+.chat-footer {
+    padding: 10px 16px; background: #fff; border-top: 1px solid var(--border);
+    display: flex; align-items: center; gap: 12px; padding-bottom: max(10px, env(safe-area-inset-bottom));
 }
+.input-box { flex: 1; background: #F2F2F7; border-radius: 20px; padding: 8px 12px; }
+#chat-input { width: 100%; background: transparent; border: none; font-size: 15px; }
+.footer-btn { font-size: 24px; background: none; border: none; color: #888; cursor: pointer; padding: 0; }
+.send-btn { width: 36px; height: 36px; border-radius: 50%; background: var(--primary); color: #fff; border: none; font-weight: bold; cursor: pointer; }
 
-// 监听浏览器后退 (物理返回键 / 侧滑)
-window.onpopstate = function(event) {
-    // 如果没有 state，说明回到了主页
-    if (!event.state) {
-        closeChat();
-    }
-};
+/* 表情面板 */
+.sticker-panel { height: 200px; background: #fff; overflow-y: auto; border-top: 1px solid var(--border); padding: 10px; transition: height 0.3s; }
+.sticker-panel.hidden { height: 0; padding: 0; border: none; }
+.sticker-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
+.sticker-item { width: 100%; cursor: pointer; transition: transform 0.1s; }
+.sticker-item:active { transform: scale(0.9); }
 
-document.getElementById('chat-back-btn').addEventListener('click', () => {
-    window.history.back(); // 手动触发后退
-});
-
-// --- 4. 网络层 (PeerJS) ---
-const statusBadge = document.getElementById('chat-status-indicator');
-let peer = null;
-let connections = {}; // { friendId: conn }
-let lastMsgSender = null;
-
-// 音频初始化 (必须用户交互后才能播放)
-const audioEl = document.getElementById('msg-sound');
-document.body.addEventListener('click', () => {
-    if(audioEl.paused) audioEl.load(); // 预加载，解锁 AudioContext
-}, { once: true });
-
-function initNetwork() {
-    peer = new Peer(currentUser.id);
-
-    peer.on('open', (id) => {
-        console.log('Online:', id);
-        reconnectAll();
-    });
-
-    peer.on('connection', (conn) => {
-        setupConnection(conn);
-    });
-    
-    peer.on('error', err => console.log('Peer Error', err));
+/* 拖拽遮罩 */
+.drag-overlay {
+    position: absolute; top:0; left:0; width:100%; height:100%; background: rgba(0,0,0,0.6);
+    z-index: 50; display: flex; justify-content: center; align-items: center; pointer-events: none;
 }
+.drag-overlay.active { pointer-events: auto; } /* 只有在 active 时才响应 */
+.drag-overlay.hidden { display: none; }
+.drag-box { width: 200px; height: 200px; border: 2px dashed #fff; border-radius: 20px; display: flex; flex-direction: column; align-items: center; justify-content: center; color: #fff; gap: 10px; }
 
-function setupConnection(conn) {
-    conn.on('open', () => {
-        connections[conn.peer] = conn;
-        // 如果是陌生人，自动存为好友
-        if (!friends.find(f => f.id === conn.peer)) {
-            addFriend(conn.peer);
-        }
-        renderFriendsList(); // 更新列表状态点
-        if(activeChatId === conn.peer) updateOnlineStatusUI(conn.peer);
-    });
-
-    conn.on('data', (data) => handleData(conn.peer, data));
-    
-    conn.on('close', () => {
-        delete connections[conn.peer];
-        renderFriendsList();
-        if(activeChatId === conn.peer) updateOnlineStatusUI(conn.peer);
-    });
+/* Persistent Toast Notification */
+.notify-card {
+    position: fixed; top: 20px; left: 50%; transform: translateX(-50%);
+    width: 90%; max-width: 400px; background: rgba(255,255,255,0.95); backdrop-filter: blur(10px);
+    border-radius: 16px; box-shadow: 0 10px 30px rgba(0,0,0,0.15);
+    padding: 16px; display: flex; flex-direction: column; gap: 10px; z-index: 999;
+    border: 1px solid rgba(0,0,0,0.05); animation: slideDown 0.3s ease-out;
 }
+@keyframes slideDown { from { top: -100px; } to { top: 20px; } }
+.notify-card.hidden { display: none; }
+.notify-title { font-weight: 700; font-size: 14px; color: var(--primary); }
+.notify-body { font-size: 13px; color: var(--text-sub); }
+.notify-actions { display: flex; gap: 10px; justify-content: flex-end; }
+.notify-btn { border: none; background: none; font-size: 13px; font-weight: 600; cursor: pointer; padding: 6px 12px; border-radius: 8px; }
+.notify-btn.close { color: #888; background: #f2f2f2; }
+.notify-btn.view { color: #fff; background: var(--primary); }
 
-function connectTo(id) {
-    if (!id || id === currentUser.id) return;
-    if (connections[id] && connections[id].open) return;
-    const conn = peer.connect(id);
-    setupConnection(conn);
-}
-
-function reconnectAll() {
-    friends.forEach(f => connectTo(f.id));
-}
-
-function updateOnlineStatusUI(id) {
-    const isOnline = connections[id] && connections[id].open;
-    if (id === activeChatId) {
-        statusBadge.className = isOnline ? 'status-indicator online' : 'status-indicator';
-    }
-}
-
-// --- 5. 消息处理 ---
-function handleData(senderId, data) {
-    lastMsgSender = senderId;
-    
-    // 播放声音
-    audioEl.play().catch(e => console.log('Audio blocked', e));
-
-    const msgObj = {
-        isSelf: false,
-        timestamp: Date.now()
-    };
-
-    if (data.type === 'text') {
-        msgObj.type = 'text';
-        msgObj.content = data.content;
-    } else if (data.type === 'file') {
-        msgObj.type = 'file';
-        // 转换 ArrayBuffer 为 Blob URL
-        const blob = new Blob([data.file], { type: data.fileType });
-        msgObj.content = { name: data.fileName, url: URL.createObjectURL(blob) };
-    }
-
-    addMessageToHistory(senderId, msgObj);
-
-    // 如果当前正在和这个人聊天，直接追加 DOM
-    if (activeChatId === senderId) {
-        appendMsgToDOM(msgObj);
-    } else {
-        showToast(`收到 ${senderId} 的消息`);
-    }
-}
-
-function sendMessage(type, payload) {
-    if (!activeChatId) return;
-    const conn = connections[activeChatId];
-    
-    // 即使离线也可以发(存本地)，但为了简单，目前要求在线
-    // 优化: 可以在UI上显示“离线消息已排队”，这里为了演示仅直接发
-    
-    const msgObj = { isSelf: true, timestamp: Date.now(), type: type };
-    
-    if (type === 'text') {
-        if(conn && conn.open) conn.send({ type: 'text', content: payload });
-        msgObj.content = payload;
-    } else if (type === 'file') {
-        if(conn && conn.open) conn.send({ 
-            type: 'file', file: payload, fileName: payload.name, fileType: payload.type 
-        });
-        msgObj.content = { name: payload.name, url: '#' };
-    }
-
-    addMessageToHistory(activeChatId, msgObj);
-    appendMsgToDOM(msgObj);
-}
-
-// --- 6. 渲染逻辑 ---
-function renderFriendsList() {
-    const container = document.getElementById('friends-list-container');
-    container.innerHTML = '';
-    document.getElementById('friend-count').innerText = friends.length;
-
-    friends.forEach(f => {
-        const isOnline = connections[f.id] && connections[f.id].open;
-        const div = document.createElement('div');
-        div.className = 'k-list-item';
-        div.innerHTML = `
-            <img src="${getAvatar(f.id)}" class="avatar-squircle">
-            <div class="item-content">
-                <div class="item-title">${f.nickname || f.id}</div>
-                <div class="item-subtitle">
-                    <span class="status-dot ${isOnline ? 'on' : ''}"></span>
-                    ${isOnline ? '在线' : '离线'}
-                </div>
-            </div>
-            <div style="color:#ccc; font-size:20px;">⋮</div>
-        `;
-        
-        // 点击进入聊天
-        div.addEventListener('click', (e) => {
-            // 如果点击的是菜单按钮 (简单模拟)
-            if(e.target.innerText === '⋮') {
-                e.stopPropagation();
-                openRenameModal(f.id);
-            } else {
-                openChat(f.id);
-            }
-        });
-        container.appendChild(div);
-    });
-}
-
-function renderChatMessages(id) {
-    const container = document.getElementById('messages-container');
-    container.innerHTML = '';
-    const msgs = chatHistory[id] || [];
-    msgs.forEach(appendMsgToDOM);
-    setTimeout(() => container.scrollTop = container.scrollHeight, 100);
-}
-
-function appendMsgToDOM(msg) {
-    const container = document.getElementById('messages-container');
-    const div = document.createElement('div');
-    div.className = `message-row ${msg.isSelf ? 'self' : 'other'}`;
-    
-    if (msg.type === 'text') {
-        div.innerHTML = `<div class="chat-bubble">${msg.content}</div>`;
-    } else {
-        div.innerHTML = `
-            <div class="chat-bubble">
-                <a href="${msg.content.url}" download="${msg.content.name}" class="file-msg">
-                    <span>📄</span> ${msg.content.name}
-                </a>
-            </div>`;
-    }
-    container.appendChild(div);
-    container.scrollTop = container.scrollHeight;
-}
-
-// 辅助函数
-const getAvatar = (seed) => `https://api.dicebear.com/7.x/notionists/svg?seed=${seed}&backgroundColor=ffe0a5`;
-function addFriend(id) {
-    if (friends.find(f => f.id === id)) return;
-    friends.push({ id: id, nickname: '新朋友 ' + id.substr(-4) });
-    localStorage.setItem(`sloth_friends_${DB_VERSION}`, JSON.stringify(friends));
-    renderFriendsList();
-}
-
-// --- 7. 交互绑定 ---
-
-// 发送文字
-const input = document.getElementById('chat-input');
-const sendBtn = document.getElementById('chat-send-btn');
-function triggerSend() {
-    const txt = input.value.trim();
-    if(txt) { sendMessage('text', txt); input.value = ''; }
-}
-sendBtn.addEventListener('click', triggerSend);
-input.addEventListener('keypress', e => { if(e.key === 'Enter') triggerSend(); });
-
-// 发送文件 (修复点击问题)
-const fileBtn = document.getElementById('add-file-btn');
-const fileInput = document.getElementById('real-file-input');
-fileBtn.addEventListener('click', () => {
-    fileInput.click(); // 显式触发
-});
-fileInput.addEventListener('change', (e) => {
-    if (e.target.files[0]) sendMessage('file', e.target.files[0]);
-    e.target.value = '';
-});
-
-// 模态框逻辑
-const qrModal = document.getElementById('qr-overlay');
-const addModal = document.getElementById('add-overlay');
-const renameModal = document.getElementById('rename-overlay');
-
-document.getElementById('scan-btn').addEventListener('click', () => {
-    qrModal.classList.remove('hidden');
-    startScan();
-});
-function closeScanner() { qrModal.classList.add('hidden'); stopScan(); }
-
-document.getElementById('add-id-btn').addEventListener('click', () => addModal.classList.remove('hidden'));
-function closeAddModal() { addModal.classList.add('hidden'); }
-document.getElementById('confirm-add-btn').addEventListener('click', () => {
-    const id = document.getElementById('manual-id-input').value.trim();
-    if(id) { addFriend(id); connectTo(id); closeAddModal(); showToast('已添加'); }
-});
-
-// 重命名逻辑
-let renamingId = null;
-function openRenameModal(id) {
-    renamingId = id;
-    const f = friends.find(x => x.id === id);
-    document.getElementById('rename-input').value = f ? f.nickname : '';
-    renameModal.classList.remove('hidden');
-}
-function closeRenameModal() { renameModal.classList.add('hidden'); }
-document.getElementById('confirm-rename-btn').addEventListener('click', () => {
-    const name = document.getElementById('rename-input').value.trim();
-    if(name && renamingId) updateFriendName(renamingId, name);
-    closeRenameModal();
-});
-
-// 扫码器逻辑
-let html5QrCode;
-function startScan() {
-    html5QrCode = new Html5Qrcode("qr-reader");
-    html5QrCode.start({ facingMode: "environment" }, { fps: 10, qrbox: 250 }, (txt) => {
-        closeScanner();
-        addFriend(txt);
-        connectTo(txt);
-        showToast('扫码成功');
-    }).catch(err => alert('相机启动失败'));
-}
-function stopScan() { if(html5QrCode) html5QrCode.stop().then(()=>html5QrCode.clear()); }
-
-// 启动
-initNetwork();
-renderFriendsList();
-
-// PWA WakeLock
-document.addEventListener('click', async () => {
-    try { if ('wakeLock' in navigator) await navigator.wakeLock.request('screen'); } catch(e){}
-}, { once: true });
-
-// SW
-if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js');
+/* Modal */
+.modal-overlay { position: fixed; top:0; left:0; width:100%; height:100%; background: rgba(0,0,0,0.4); z-index: 100; display:flex; justify-content:center; align-items:center; }
+.modal-overlay.hidden { display: none; }
+.modal-box { background: #fff; padding: 24px; border-radius: 16px; width: 300px; }
+.scanner-box { padding: 0; background: #000; overflow: hidden; position: relative; }
+.close-float { position: absolute; top: 10px; right: 10px; background: rgba(255,255,255,0.3); border: none; width: 30px; height: 30px; border-radius: 50%; color: #fff; font-size: 20px; z-index: 10; cursor: pointer; }
+.modal-input { width: 100%; padding: 12px; margin: 15px 0; border: 1px solid var(--border); border-radius: 8px; }
+.modal-btns { display: flex; justify-content: flex-end; gap: 10px; }
+.btn-primary { background: var(--primary); color: #fff; border: none; padding: 8px 16px; border-radius: 6px; font-weight: 600; cursor: pointer; }
+.btn-text { background: none; border: none; color: #888; cursor: pointer; }
