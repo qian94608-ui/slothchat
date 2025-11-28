@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <meta name="theme-color" content="#E6D3B3"> <title>WojakNet</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+    <script src="https://unpkg.com/peerjs@1.5.1/dist/peerjs.min.js"></script>
+    <script src="https://unpkg.com/html5-qrcode" type="text/javascript"></script>
+    <link rel="stylesheet" href="style.css">
+    <link rel="manifest" href="manifest.json">
+    <link rel="icon" type="image/png" href="https://upload.wikimedia.org/wikipedia/en/9/9a/Trollface_non-free.png">
+</head>
+<body>
+
+    <div id="app-root">
+        <div id="view-main" class="page active">
+            <header class="meme-header">
+                <div class="header-brand">WojakNet v.420</div>
+                <div class="header-actions">
+                    <button id="scan-btn" class="meme-btn small">📷 Scan</button>
+                    <button id="add-id-btn" class="meme-btn small">➕ Add fren</button>
+                </div>
+            </header>
+
+            <div id="tab-friends" class="tab-content active-tab">
+                <div class="meme-card list-container">
+                    <div class="list-title">My Frens</div>
+                    <div class="k-list-item me-item">
+                        <div class="avatar-frame">
+                            <img id="my-avatar-small" class="avatar-img">
+                        </div>
+                        <div class="item-content">
+                            <div class="item-title">Me (Anon)</div>
+                            <div class="item-subtitle" id="my-id-display">ID: Loading...</div>
+                        </div>
+                    </div>
+                    <div class="divider"></div>
+                    <div id="friends-list-container">
+                        </div>
+                </div>
+            </div>
+
+            <div id="tab-identity" class="tab-content">
+                <div class="identity-wrapper">
+                    <div class="meme-card identity-card">
+                        <div class="card-title">> MY FEELS LICENSE</div>
+                        <div class="card-body">
+                            <div class="info-row">
+                                <span>NAME:</span> <span class="hand-drawn-text">Anon</span>
+                            </div>
+                            <div class="info-row">
+                                <span>ID NO:</span> <span class="hand-drawn-text" id="card-id-text">...</span>
+                            </div>
+                            <div class="info-row">
+                                <span>STATUS:</span> <span class="hand-drawn-text">Just Pain.</span>
+                            </div>
+                            <div class="qr-frame">
+                                <div id="qrcode" class="card-qr"></div>
+                                <div class="qr-label">Show this to normies</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <nav class="meme-bottom-nav">
+                <button class="nav-btn active" data-target="tab-friends">
+                    <span style="font-size:20px">🐸</span> Frens
+                </button>
+                <button class="nav-btn" data-target="tab-identity">
+                    <span style="font-size:20px">🚬</span> My Feels
+                </button>
+            </nav>
+        </div>
+
+        <div id="view-chat" class="page right-sheet">
+            <header class="meme-header chat-header">
+                <button id="chat-back-btn" class="meme-btn small">← Back</button>
+                <div class="chat-info">
+                    <span id="chat-partner-name">User</span>
+                    <span id="chat-status-dot" class="status-square"></span>
+                </div>
+            </header>
+
+            <div id="messages-container" class="messages-container">
+                </div>
+
+            <div class="chat-footer">
+                <button id="sticker-btn" class="footer-icon">🤡</button>
+                <input type="file" id="real-file-input" hidden>
+                <button id="add-file-btn" class="footer-icon">📁</button>
+                <div class="input-box-border">
+                    <input type="text" id="chat-input" placeholder="Say something cringe..." autocomplete="off">
+                </div>
+                <button id="chat-send-btn" class="meme-btn send">SEND >></button>
+            </div>
+            
+            <div id="sticker-panel" class="sticker-panel hidden" style="display:none;">
+                <div class="sticker-grid" id="sticker-grid">
+                    </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="qr-overlay" class="modal-overlay hidden" style="display:none;">
+        <div class="modal-box scanner-box">
+            <div class="modal-bar">> SCANNING... <button class="close-x" onclick="hideAllModals()">X</button></div>
+            <div id="qr-reader" style="width:100%"></div>
+        </div>
+    </div>
+
+    <div id="add-overlay" class="modal-overlay hidden" style="display:none;">
+        <div class="modal-box">
+            <div class="modal-bar">> ADD FREN <button class="close-x" onclick="hideAllModals()">X</button></div>
+            <div class="modal-content">
+                <input type="text" id="manual-id-input" placeholder="Paste their ID here..." class="meme-input">
+                <div class="modal-btns">
+                    <button id="confirm-add-btn" class="meme-btn full">ADD THEM</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <audio id="msg-sound" src="https://www.myinstants.com/media/sounds/discord-notification.mp3" preload="auto"></audio>
+
+    <script src="app.js"></script>
+</body>
+</html>

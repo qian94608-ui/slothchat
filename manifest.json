@@ -1,0 +1,15 @@
+{
+  "name": "WojakNet",
+  "short_name": "WojakNet",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "background_color": "#E6D3B3",
+  "theme_color": "#E6D3B3",
+  "icons": [
+    {
+      "src": "https://upload.wikimedia.org/wikipedia/en/9/9a/Trollface_non-free.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    }
+  ]
+}
