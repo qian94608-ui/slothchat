@@ -3,13 +3,17 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-    <title>WojakNet v19</title>
+    <meta name="apple-mobile-web-app-title" content="PepeChat">
+    <link rel="apple-touch-icon" href="https://cdn-icons-png.flaticon.com/512/12310/12310702.png">
     
+    <title>PepeNet v20</title>
+    
+    <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;600&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="style.css">
     <link rel="manifest" href="manifest.json">
-    <link rel="apple-touch-icon" href="https://upload.wikimedia.org/wikipedia/en/9/9a/Trollface_non-free.png">
     
     <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
@@ -19,113 +23,104 @@
 
     <div id="app-root">
         <div id="view-main" class="page active">
-            <header class="meme-header">
-                <div class="header-brand">WojakNet <span style="font-size:10px;color:red;">v19</span></div>
-                <div style="display:flex; gap:10px; align-items:center;">
-                    <div id="conn-status" class="status-badge red">Wait...</div>
+            <header class="pepe-header">
+                <div class="logo-box">
+                    <img src="https://cdn-icons-png.flaticon.com/512/12310/12310702.png" class="logo-img">
+                    <span>PepeNet</span>
                 </div>
+                <div id="conn-status" class="status-pill red">Connecting...</div>
             </header>
 
-            <div class="action-bar">
-                <button id="scan-btn" class="meme-btn full-width">📷 SCAN QR</button>
-                <button id="add-id-btn" class="meme-btn full-width">➕ ADD ID</button>
-            </div>
-
-            <div id="tab-friends" class="tab-content active-tab">
-                <div class="list-title">MY FRENS</div>
-                <div class="k-list-item me-item">
-                    <div class="avatar-frame"><img id="my-avatar" class="avatar-img"></div>
-                    <div style="flex:1;">
-                        <div style="display:flex; justify-content:space-between;">
-                            <div style="font-weight:bold" id="my-nickname">ME</div>
-                            <div onclick="resetApp()" style="font-size:10px; text-decoration:underline; color:red; cursor:pointer;">RESET</div>
-                        </div>
-                        <div style="font-size:24px; font-weight:bold; color:blue; font-family:monospace;" id="my-id-display">....</div>
+            <div class="coin-balance-card">
+                <div class="coin-label">MY ID WALLET</div>
+                <div class="coin-row">
+                    <div id="qrcode" class="qr-small"></div>
+                    <div class="coin-info">
+                        <div class="coin-value" id="my-id-display">....</div>
+                        <div class="coin-name" id="my-nickname" onclick="editMyName()">Anon ✏️</div>
                     </div>
                 </div>
-                <div class="divider"></div>
+            </div>
+
+            <div class="action-grid">
+                <button id="scan-btn" class="pepe-btn green">
+                    <span style="font-size:20px">📷</span> SCAN
+                </button>
+                <button id="add-id-btn" class="pepe-btn blue">
+                    <span style="font-size:20px">➕</span> ADD ID
+                </button>
+            </div>
+
+            <div class="list-container">
+                <div class="list-title">Frens List 🐸</div>
                 <div id="friends-list-container"></div>
             </div>
 
-            <div id="tab-identity" class="tab-content hidden">
-                <div class="cyber-card-wrapper">
-                    <div class="cyber-card">
-                        <div class="cyber-header">MEME IDENTIFICATION</div>
-                        <div class="cyber-body">
-                            <div class="cc-left">
-                                <div id="qrcode" class="qr-img"></div>
-                            </div>
-                            <div class="cc-mid">
-                                <img id="card-avatar" class="cc-avatar">
-                            </div>
-                            <div class="cc-right">
-                                <div class="cc-label">ID NUMBER</div>
-                                <div class="id-glitch" id="card-id-text">0000</div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            <nav class="meme-bottom-nav">
-                <button class="nav-btn active" data-target="tab-friends">🐸 FRENS</button>
-                <button class="nav-btn" data-target="tab-identity">💳 CARD</button>
+            <nav class="pepe-nav">
+                <div class="nav-item active">HOME</div>
+                <div class="nav-item" onclick="toggleFM()">📻 FM RADIO</div>
             </nav>
         </div>
 
         <div id="view-chat" class="page right-sheet">
-            <header class="meme-header chat-header">
-                <button id="chat-back-btn" class="meme-btn small">&lt; BACK</button>
-                <div class="chat-info">
-                    <span id="chat-partner-name">User</span> 
-                    <span id="chat-online-dot" class="status-dot"></span>
+            <header class="pepe-header chat-mode">
+                <button id="chat-back-btn" class="back-btn">⬅</button>
+                <div class="chat-title" onclick="editFriendName()">
+                    <span id="chat-partner-name">User</span> ✏️
                 </div>
-                <button id="rename-btn" class="meme-btn small">✏️</button>
+                <div class="chat-status-dot" id="chat-dot"></div>
             </header>
-            
-            <div id="drag-overlay" class="drag-overlay hidden">
-                <div class="drag-box">📂 RELEASE TO SEND</div>
-            </div>
 
             <div id="messages-container" class="messages-container"></div>
-            
-            <div class="chat-footer">
-                <button id="sticker-btn" class="footer-icon">🤡</button>
-                <button id="mode-switch-btn" class="footer-icon">⌨️</button>
 
-                <div id="input-mode-voice" class="input-area">
-                    <button id="voice-record-btn" class="voice-btn">HOLD TO SPEAK</button>
+            <div id="drag-overlay" class="drag-overlay hidden">
+                <div class="drag-text">📂 DROP FILE</div>
+            </div>
+
+            <div class="chat-footer">
+                <button id="sticker-btn" class="tool-btn">🐸</button>
+                <button id="mode-switch-btn" class="tool-btn">⌨️</button>
+                
+                <div id="input-mode-voice" class="input-wrapper">
+                    <button id="voice-record-btn" class="big-red-btn">HOLD TO SPEAK</button>
                 </div>
 
-                <div id="input-mode-text" class="input-area hidden">
-                    <div class="input-box-border"><input type="text" id="chat-input" placeholder="Type..." autocomplete="off"></div>
-                    <button id="chat-send-btn" class="meme-btn">SEND</button>
+                <div id="input-mode-text" class="input-wrapper hidden">
+                    <input type="text" id="chat-input" placeholder="Type here..." autocomplete="off">
+                    <button id="chat-send-btn" class="send-btn">➤</button>
                 </div>
             </div>
-            
+
             <div id="sticker-panel" class="sticker-panel hidden">
                 <div class="sticker-grid" id="sticker-grid"></div>
             </div>
         </div>
     </div>
 
-    <div id="qr-overlay" class="modal-overlay hidden"><div class="modal-box scanner-box"><div class="modal-bar">SCAN <button class="close-x" onclick="closeAllModals()">X</button></div><div id="qr-reader"></div></div></div>
-    
+    <div id="qr-overlay" class="modal-overlay hidden">
+        <div class="modal-box">
+            <div class="modal-header">SCAN QR <button class="close-x" onclick="closeAllModals()">✕</button></div>
+            <div id="qr-reader"></div>
+            <div style="text-align:center; padding:10px; color:#666;">Point camera at friend's ID</div>
+        </div>
+    </div>
+
     <div id="add-overlay" class="modal-overlay hidden">
         <div class="modal-box">
-            <div class="modal-bar">ADD ID <button class="close-x" onclick="closeAllModals()">X</button></div>
-            <div class="modal-content">
-                <input type="number" id="manual-id-input" class="meme-input-large" placeholder="1234">
-                <div style="height:10px;"></div>
-                <button id="confirm-add-btn" class="meme-btn full-large">CONNECT NOW</button>
+            <div class="modal-header">ADD FREN <button class="close-x" onclick="closeAllModals()">✕</button></div>
+            <div class="modal-body">
+                <input type="number" id="manual-id-input" class="big-input" placeholder="1234">
+                <button id="confirm-add-btn" class="pepe-btn green full">CONNECT 🚀</button>
             </div>
         </div>
     </div>
 
     <audio id="msg-sound" src="https://www.myinstants.com/media/sounds/discord-notification.mp3"></audio>
-    <audio id="scan-sound" src="https://www.myinstants.com/media/sounds/success-sound-effect.mp3"></audio>
-    
+    <audio id="success-sound" src="https://www.myinstants.com/media/sounds/coin-collect-sound-effect_1.mp3"></audio>
     <audio id="fm-radio" src="https://play.streamafrica.net/lofiradio" preload="none"></audio>
-    <button id="fm-btn" class="fm-float-btn">🎵</button> <script src="app.js"></script>
+    
+    <input type="file" id="global-file-input" style="display:none">
+
+    <script src="app.js"></script>
 </body>
 </html>
