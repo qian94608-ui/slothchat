@@ -1,4 +1,4 @@
-const CACHE_NAME = 'wojaknet-v7-persistent';
+const CACHE_NAME = 'wojak-v8-voice-gesture';
 const FILES = [
     './', './index.html', './style.css', './app.js', './manifest.json',
     'https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js',
