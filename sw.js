@@ -1,4 +1,4 @@
-const CACHE_NAME = 'wojak-v9-instant';
+const CACHE_NAME = 'wojak-v11-handshake-fix';
 const FILES = [
     './', './index.html', './style.css', './app.js', './manifest.json',
     'https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js',
