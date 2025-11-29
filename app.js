@@ -1,20 +1,265 @@
 document.addEventListener('DOMContentLoaded', () => {
 
-    // --- PWA 安装逻辑 ---
-    let deferredPrompt;
-    const installBtn = document.getElementById('pwa-install-btn');
-    window.addEventListener('beforeinstallprompt', (e) => {
-        e.preventDefault();
-        deferredPrompt = e;
-        installBtn.classList.remove('hidden');
-        installBtn.style.display = 'inline-block';
-    });
-    installBtn.addEventListener('click', () => {
-        installBtn.style.display = 'none';
-        deferredPrompt.prompt();
-    });
+    // ==========================================
+    // 1. 本地存储管理 (Persistence System)
+    // ==========================================
+    const DB_KEY = 'wojak_data_v1';
+    
+    // 初始化或读取数据
+    let db = JSON.parse(localStorage.getItem(DB_KEY)) || {
+        profile: {
+            id: 'Anon-' + crypto.randomUUID().split('-')[0].toUpperCase(), // 永久固定的ID
+            avatarSeed: Math.random().toString()
+        },
+        friends: [], // [ {id: '...', addedAt: 123} ]
+        history: {}  // { 'friendId': [ {type, content, isSelf, ts} ] }
+    };
+    
+    // 立即保存一次以确保ID固定
+    const saveDB = () => localStorage.setItem(DB_KEY, JSON.stringify(db));
+    saveDB(); // 确保初次生成的ID被写入
 
-    // --- 工具函数 ---
+    const MY_ID = db.profile.id;
+    let activeChatId = null;
+    let connections = {};
+    let peer = null;
+
+    // UI: 显示我的信息
+    document.getElementById('my-id-display').innerText = MY_ID;
+    document.getElementById('card-id-text').innerText = MY_ID;
+    document.getElementById('my-avatar').src = `https://api.dicebear.com/7.x/bottts/svg?seed=${db.profile.avatarSeed}`;
+    
+    try {
+        if(window.QRCode) {
+            new QRCode(document.getElementById("qrcode"), { text: MY_ID, width: 80, height: 80 });
+        }
+    } catch(e){}
+
+    // ==========================================
+    // 2. 屏幕常亮与保活 (Wake Lock & Heartbeat)
+    // ==========================================
+    let wakeLock = null;
+    const wakeStatus = document.getElementById('wake-status');
+
+    // 请求屏幕常亮
+    const requestWakeLock = async () => {
+        try {
+            wakeLock = await navigator.wakeLock.request('screen');
+            wakeStatus.innerText = "👁️ AWAKE (ON)";
+            wakeStatus.className = "wake-badge on";
+            console.log("Wake Lock active");
+            
+            wakeLock.addEventListener('release', () => {
+                wakeStatus.innerText = "💤 Sleepy";
+                wakeStatus.className = "wake-badge off";
+                console.log("Wake Lock released");
+            });
+        } catch (err) {
+            console.error(`${err.name}, ${err.message}`);
+            wakeStatus.innerText = "❌ Error";
+        }
+    };
+
+    // 点击切换保活状态
+    wakeStatus.onclick = () => {
+        if(wakeStatus.classList.contains('off')) {
+            requestWakeLock();
+        } else {
+            if(wakeLock) wakeLock.release();
+            wakeLock = null;
+        }
+    };
+
+    // 自动重连心跳 (Keep-Alive Heartbeat)
+    setInterval(() => {
+        if(peer && !peer.destroyed) {
+            db.friends.forEach(f => {
+                // 如果连接不存在或断开，尝试重连
+                if(!connections[f.id] || !connections[f.id].open) {
+                    console.log('Heartbeat: Reconnecting to', f.id);
+                    connectTo(f.id);
+                } else {
+                    // 如果连接存在，发送 ping 包保活
+                    connections[f.id].send({type: 'ping'});
+                }
+            });
+        } else if (peer && peer.disconnected) {
+            peer.reconnect();
+        }
+    }, 5000); // 每5秒心跳
+
+    // ==========================================
+    // 3. 好友与聊天渲染 (Data Rendering)
+    // ==========================================
+    
+    function renderFriends() {
+        const list = document.getElementById('friends-list-container');
+        list.innerHTML = '';
+        
+        db.friends.forEach(f => {
+            const isOnline = connections[f.id] && connections[f.id].open;
+            const div = document.createElement('div');
+            div.className = 'k-list-item';
+            div.innerHTML = `
+                <div class="avatar-frame"><img src="https://api.dicebear.com/7.x/bottts/svg?seed=${f.id}" class="avatar-img"></div>
+                <div>
+                    <div style="font-weight:bold">${f.id}</div>
+                    <div style="font-size:12px; color:${isOnline?'green':'red'}">${isOnline ? '>> ONLINE' : '>> OFFLINE'}</div>
+                </div>
+            `;
+            div.onclick = () => openChat(f.id);
+            list.appendChild(div);
+        });
+    }
+
+    function addFriend(id) {
+        if(!db.friends.find(f => f.id === id)) {
+            db.friends.push({ id: id, addedAt: Date.now() });
+            saveDB();
+            renderFriends();
+        }
+    }
+
+    function openChat(id) {
+        activeChatId = id;
+        document.getElementById('chat-partner-name').innerText = id;
+        document.getElementById('view-chat').classList.add('active');
+        
+        // 渲染历史记录
+        const container = document.getElementById('messages-container');
+        container.innerHTML = '';
+        const history = db.history[id] || [];
+        history.forEach(msg => appendMsgDOM(msg.content, msg.isSelf, msg.type));
+        
+        // 推入历史记录 (Android/iOS 返回键支持)
+        window.history.pushState({view: 'chat'}, '', '#chat');
+        updateStatusDot(id);
+    }
+    
+    // 监听返回键
+    window.addEventListener('popstate', () => {
+        document.getElementById('view-chat').classList.remove('active');
+        activeChatId = null;
+    });
+    document.getElementById('chat-back-btn').onclick = () => window.history.back();
+
+    function updateStatusDot(id) {
+        const isOnline = connections[id] && connections[id].open;
+        document.getElementById('chat-status-dot').className = isOnline ? 'status-square online' : 'status-square';
+    }
+
+    // ==========================================
+    // 4. 网络层 (PeerJS)
+    // ==========================================
+    try {
+        peer = new Peer(MY_ID);
+        peer.on('open', () => {
+            console.log('Peer ID:', MY_ID);
+            // 上线后尝试连接所有已保存好友
+            db.friends.forEach(f => connectTo(f.id));
+        });
+        peer.on('connection', setupConn);
+        peer.on('error', err => console.log(err));
+    } catch(e) {}
+
+    function connectTo(id) {
+        if(id === MY_ID) return;
+        const conn = peer.connect(id);
+        setupConn(conn);
+    }
+
+    function setupConn(conn) {
+        conn.on('open', () => {
+            connections[conn.peer] = conn;
+            // 自动添加陌生人为好友 (可选，方便测试)
+            addFriend(conn.peer); 
+            renderFriends();
+            if(activeChatId === conn.peer) updateStatusDot(conn.peer);
+        });
+        
+        conn.on('data', d => {
+            // 处理心跳
+            if(d.type === 'ping') {
+                renderFriends(); // 收到ping证明对方在线
+                return; 
+            }
+            
+            // 收到消息
+            handleIncoming(conn.peer, d);
+        });
+        
+        conn.on('close', () => {
+            renderFriends();
+            if(activeChatId === conn.peer) updateStatusDot(conn.peer);
+        });
+    }
+
+    // ==========================================
+    // 5. 消息收发与存储
+    // ==========================================
+    
+    const chatInput = document.getElementById('chat-input');
+    const sendBtn = document.getElementById('chat-send-btn');
+    const sound = document.getElementById('ping-sound');
+
+    function saveMessage(friendId, content, type, isSelf) {
+        if(!db.history[friendId]) db.history[friendId] = [];
+        db.history[friendId].push({
+            content, type, isSelf, ts: Date.now()
+        });
+        saveDB();
+    }
+
+    function sendText() {
+        const txt = chatInput.value.trim();
+        if(txt && activeChatId) {
+            // 发送网络包
+            if(connections[activeChatId] && connections[activeChatId].open) {
+                connections[activeChatId].send({type: 'text', content: txt});
+            }
+            // 本地显示与存储
+            saveMessage(activeChatId, txt, 'text', true);
+            appendMsgDOM(txt, true, 'text');
+            chatInput.value = '';
+        }
+    }
+
+    function handleIncoming(senderId, data) {
+        // 存储
+        const content = data.type === 'sticker' ? data.url : data.content;
+        saveMessage(senderId, content, data.type, false);
+        
+        // 如果正在聊天，直接上屏
+        if(activeChatId === senderId) {
+            appendMsgDOM(content, false, data.type);
+        } else {
+            // 否则播放声音提示
+            sound.play().catch(()=>{});
+            alert(`New message from ${senderId}`);
+        }
+    }
+
+    function appendMsgDOM(content, isSelf, type) {
+        const container = document.getElementById('messages-container');
+        const div = document.createElement('div');
+        div.className = `msg-row ${isSelf?'self':'other'}`;
+        
+        if(type === 'text') {
+            div.innerHTML = `<div class="bubble">${content}</div>`;
+        } else if (type === 'sticker') {
+            div.innerHTML = `<img src="${content}" class="sticker-img">`;
+        }
+        
+        container.appendChild(div);
+        container.scrollTop = container.scrollHeight;
+    }
+
+    sendBtn.onclick = sendText;
+    chatInput.onkeypress = (e) => { if(e.key==='Enter') sendText(); };
+
+    // ==========================================
+    // 6. 弹窗与辅助逻辑
+    // ==========================================
     const showModal = (id) => { document.getElementById(id).classList.remove('hidden'); document.getElementById(id).style.display='flex'; };
     const hideModal = (id) => { document.getElementById(id).classList.add('hidden'); document.getElementById(id).style.display='none'; };
     window.hideAllModals = () => {
@@ -22,22 +267,17 @@ document.addEventListener('DOMContentLoaded', () => {
         if(window.scannerObj) window.scannerObj.stop().catch(()=>{});
     };
 
-    // --- 摄像头/扫码逻辑 (增加反馈) ---
+    // 扫码逻辑
     document.getElementById('scan-btn').onclick = () => {
-        if (!window.isSecureContext && window.location.hostname !== 'localhost') {
-            alert("HTTPS Required for Camera"); return;
-        }
         showModal('qr-overlay');
         setTimeout(() => {
             const scanner = new Html5Qrcode("qr-reader");
             window.scannerObj = scanner;
             scanner.start({facingMode:"environment"}, {fps:10, qrbox:200}, (txt)=>{
-                // 成功扫码
-                document.getElementById('scan-sound').play().catch(()=>{});
                 hideAllModals();
                 addFriend(txt);
-                connectTo(txt); // 立即连接
-                openChat(txt);  // 跳转聊天
+                connectTo(txt);
+                openChat(txt);
             });
         }, 300);
     };
@@ -45,16 +285,34 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('add-id-btn').onclick = () => showModal('add-overlay');
     document.getElementById('confirm-add-btn').onclick = () => {
         const id = document.getElementById('manual-id-input').value.trim();
-        if(id) { 
-            addFriend(id); 
-            connectTo(id); // 立即尝试连接 
-            hideAllModals(); 
-            openChat(id); 
-            document.getElementById('manual-id-input').value = '';
-        }
+        if(id) { addFriend(id); connectTo(id); hideAllModals(); openChat(id); }
     };
 
-    // --- 导航与历史记录 (修复手势返回) ---
+    // 表情包
+    const stickerSeeds = ['crying', 'angry', 'happy', 'clown', 'chad', 'soy', 'doomer', 'cope'];
+    const stickerGrid = document.getElementById('sticker-grid');
+    document.getElementById('sticker-btn').onclick = () => {
+        const p = document.getElementById('sticker-panel');
+        if(p.style.display==='none') { p.classList.remove('hidden'); p.style.display='block'; }
+        else { p.classList.add('hidden'); p.style.display='none'; }
+    };
+    stickerSeeds.forEach(seed => {
+        const url = `https://api.dicebear.com/7.x/fun-emoji/svg?seed=${seed}&backgroundColor=transparent`;
+        const img = document.createElement('img');
+        img.src = url;
+        img.className = 'sticker-item sticker-img';
+        img.onclick = () => {
+            if(activeChatId && connections[activeChatId]) {
+                connections[activeChatId].send({type:'sticker', url:url});
+                saveMessage(activeChatId, url, 'sticker', true);
+                appendMsgDOM(url, true, 'sticker');
+                document.getElementById('sticker-panel').style.display='none';
+            }
+        };
+        stickerGrid.appendChild(img);
+    });
+
+    // 导航切换
     const tabBtns = document.querySelectorAll('.nav-btn');
     const tabContents = document.querySelectorAll('.tab-content');
     tabBtns.forEach(btn => {
@@ -66,223 +324,9 @@ document.addEventListener('DOMContentLoaded', () => {
         };
     });
 
-    // 处理聊天页面打开与返回
-    function openChat(id) {
-        activeChatId = id;
-        document.getElementById('chat-partner-name').innerText = id;
-        document.getElementById('view-chat').classList.add('active');
-        document.getElementById('messages-container').innerHTML = ''; // 清空旧消息
-        
-        // 关键：推入历史记录，拦截返回手势
-        window.history.pushState({view: 'chat'}, '', '#chat');
-        
-        // 更新在线状态UI
-        updateStatusDot(id);
-    }
-
-    // 监听返回事件 (手势或物理按键)
-    window.addEventListener('popstate', (event) => {
-        document.getElementById('view-chat').classList.remove('active');
-        activeChatId = null;
-    });
-
-    // 按钮返回也调用 history.back()
-    document.getElementById('chat-back-btn').onclick = () => {
-        window.history.back();
-    };
-
-
-    // --- 业务数据 ---
-    const MY_ID = localStorage.getItem('wojak_id') || 'Anon-' + Math.floor(Math.random() * 90000);
-    localStorage.setItem('wojak_id', MY_ID);
-    let friends = JSON.parse(localStorage.getItem('wojak_frens')) || [];
-    let activeChatId = null;
-    let connections = {}; // { friendId: conn }
-    let peer = null;
-
-    try {
-        document.getElementById('my-id-display').innerText = MY_ID;
-        document.getElementById('card-id-text').innerText = MY_ID;
-        // 使用一个更怪诞的头像种子
-        document.getElementById('my-avatar-small').src = `https://api.dicebear.com/7.x/bottts/svg?seed=${MY_ID}`;
-        if(window.QRCode) new QRCode(document.getElementById("qrcode"), { text: MY_ID, width: 80, height: 80 });
-    } catch(e){}
-
-    function renderFriends() {
-        const list = document.getElementById('friends-list-container');
-        if(!list) return;
-        list.innerHTML = '';
-        friends.forEach(id => {
-            const isOnline = connections[id] && connections[id].open;
-            const div = document.createElement('div');
-            div.className = 'k-list-item';
-            div.innerHTML = `
-                <div class="avatar-frame"><img src="https://api.dicebear.com/7.x/bottts/svg?seed=${id}" class="avatar-img"></div>
-                <div>
-                    <div style="font-weight:bold">${id}</div>
-                    <div style="font-size:12px; color:${isOnline?'green':'red'}">${isOnline ? '>> ONLINE' : '>> OFFLINE'}</div>
-                </div>
-            `;
-            div.onclick = () => openChat(id);
-            list.appendChild(div);
-        });
-    }
-
-    function addFriend(id) {
-        if(!friends.includes(id)) {
-            friends.push(id);
-            localStorage.setItem('wojak_frens', JSON.stringify(friends));
-        }
-        renderFriends();
-    }
-
-    function updateStatusDot(id) {
-        const isOnline = connections[id] && connections[id].open;
-        document.getElementById('chat-status-dot').className = isOnline ? 'status-square online' : 'status-square';
-    }
-
-    // --- 网络逻辑 (PeerJS) ---
-    // 自动回连
-    function autoReconnect() {
-        if(peer && !peer.destroyed) {
-            friends.forEach(fid => {
-                if(!connections[fid] || !connections[fid].open) connectTo(fid);
-            });
-        }
-    }
-    setInterval(autoReconnect, 5000); // 每5秒检查连接
-
-    try {
-        peer = new Peer(MY_ID);
-        peer.on('open', () => {
-            console.log('Peer Open');
-            document.getElementById('my-id-display').innerText = MY_ID; // 只有连上服务器才显示ID
-            autoReconnect();
-        });
-        
-        peer.on('connection', (conn) => {
-            handleConnection(conn);
-        });
-        
-        peer.on('error', err => console.log(err));
-    } catch(e) { console.log("Peer Init Error", e); }
-
-    function connectTo(id) {
-        if(id === MY_ID) return;
-        const conn = peer.connect(id);
-        handleConnection(conn);
-    }
-
-    function handleConnection(conn) {
-        conn.on('open', () => {
-            connections[conn.peer] = conn;
-            addFriend(conn.peer); // 自动加好友
-            
-            // 发送握手包 (解决状态显示问题)
-            conn.send({type: 'ping'});
-            renderFriends();
-            if(activeChatId === conn.peer) updateStatusDot(conn.peer);
-        });
-        
-        conn.on('data', d => {
-            // 处理握手
-            if(d.type === 'ping') {
-                // 收到 ping，不需要做UI显示，只确认连接存活
-                // 可以在这里回一个 pong，但 peerjs 的 open 事件通常足够
-                // 关键：收到任何数据都意味着在线
-                renderFriends(); 
-                if(activeChatId === conn.peer) updateStatusDot(conn.peer);
-            }
-            // 处理消息
-            else if(d.type === 'text') handleIncoming(conn.peer, d.content, 'text');
-            else if(d.type === 'sticker') handleIncoming(conn.peer, d.url, 'sticker');
-        });
-
-        conn.on('close', () => {
-            renderFriends(); // 变红
-            if(activeChatId === conn.peer) updateStatusDot(conn.peer);
-        });
-    }
-
-    // --- 消息处理 ---
-    const msgContainer = document.getElementById('messages-container');
-    const chatInput = document.getElementById('chat-input');
-    const sound = document.getElementById('msg-sound');
-
-    document.getElementById('chat-send-btn').onclick = sendText;
-    chatInput.onkeypress = (e) => { if(e.key === 'Enter') sendText(); };
-
-    function sendText() {
-        const txt = chatInput.value.trim();
-        if(txt && activeChatId) {
-            if(connections[activeChatId] && connections[activeChatId].open) {
-                connections[activeChatId].send({type:'text', content:txt});
-                appendMsg(txt, true);
-                chatInput.value = '';
-            } else {
-                alert("Fren is OFFLINE. Message lost in void.");
-            }
-        }
-    }
-
-    function handleIncoming(id, content, type) {
-        if(activeChatId !== id) {
-            sound.play().catch(()=>{});
-            // 简单的 Toast 提示
-            alert(`New ${type} from ${id}`);
-        } else {
-            if(type === 'text') appendMsg(content, false);
-            if(type === 'sticker') appendSticker(content, false);
-        }
-    }
-
-    function appendMsg(txt, isSelf) {
-        const div = document.createElement('div');
-        div.className = `msg-row ${isSelf?'self':'other'}`;
-        div.innerHTML = `<div class="bubble">${txt}</div>`;
-        msgContainer.appendChild(div);
-        msgContainer.scrollTop = msgContainer.scrollHeight;
-    }
-
-    // --- 表情包 (使用 Base64 或 SVG 确保不挂图) ---
-    // 为了防止 Imgur 挂图，这里使用 Dicebear 的特定 Avatar 作为 Sticker，或者使用 SVG
-    // 这里演示使用 Dicebear 不同的 Seed 生成怪异表情
-    const stickerSeeds = ['crying', 'angry', 'happy', 'clown', 'chad', 'soy', 'doomer', 'cope'];
-    const stickerGrid = document.getElementById('sticker-grid');
+    // 初始化显示
+    renderFriends();
     
-    document.getElementById('sticker-btn').onclick = () => {
-        const panel = document.getElementById('sticker-panel');
-        if(panel.style.display==='none' || panel.classList.contains('hidden')) {
-            panel.classList.remove('hidden'); panel.style.display='block';
-        } else {
-            panel.classList.add('hidden'); panel.style.display='none';
-        }
-    };
-
-    stickerSeeds.forEach(seed => {
-        // 使用 DiceBear Fun Emoji 风格
-        const url = `https://api.dicebear.com/7.x/fun-emoji/svg?seed=${seed}&backgroundColor=transparent`;
-        const img = document.createElement('img');
-        img.src = url;
-        img.className = 'sticker-item sticker-img';
-        img.onclick = () => {
-            if(activeChatId && connections[activeChatId]) {
-                connections[activeChatId].send({type:'sticker', url:url});
-                appendSticker(url, true);
-                document.getElementById('sticker-panel').style.display='none';
-            }
-        };
-        stickerGrid.appendChild(img);
-    });
-
-    function appendSticker(url, isSelf) {
-        const div = document.createElement('div');
-        div.className = `msg-row ${isSelf?'self':'other'}`;
-        div.innerHTML = `<img src="${url}" class="sticker-img">`;
-        msgContainer.appendChild(div);
-        msgContainer.scrollTop = msgContainer.scrollHeight;
-    }
-
     // 全局点击解锁音频
     document.body.onclick = () => sound.load();
 });
