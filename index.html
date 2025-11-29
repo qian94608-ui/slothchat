@@ -3,23 +3,35 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="WojakNet">
+    <link rel="apple-touch-icon" href="https://upload.wikimedia.org/wikipedia/en/9/9a/Trollface_non-free.png">
+    
+    <meta name="theme-color" content="#E6D3B3">
     <title>WojakNet</title>
+    
     <link rel="stylesheet" href="style.css">
     <link rel="manifest" href="manifest.json">
+    
     <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
     <script src="https://unpkg.com/peerjs@1.5.1/dist/peerjs.min.js"></script>
     <script src="https://unpkg.com/html5-qrcode" type="text/javascript"></script>
 </head>
 <body>
+
     <div id="app-root">
         <div id="view-main" class="page active">
             <header class="meme-header">
                 <div class="header-brand">WojakNet</div>
-                <div>
-                    <button id="scan-btn" class="meme-btn small">📷 Scan</button>
-                    <button id="add-id-btn" class="meme-btn small">➕ Add</button>
-                </div>
+                <button id="pwa-install-btn" class="meme-btn small hidden" style="background:#FFD700;">⬇ Install</button>
             </header>
+
+            <div class="action-bar">
+                <button id="scan-btn" class="meme-btn full-width">📷 SCAN QR</button>
+                <button id="add-id-btn" class="meme-btn full-width">➕ ADD ID</button>
+            </div>
 
             <div id="tab-friends" class="tab-content active-tab">
                 <div class="list-title">MY FRENS</div>
@@ -27,20 +39,22 @@
                     <div class="avatar-frame"><img id="my-avatar-small" class="avatar-img"></div>
                     <div>
                         <div style="font-weight:bold">ME (ANON)</div>
-                        <div style="font-size:12px" id="my-id-display">...</div>
+                        <div style="font-size:12px; font-family:monospace;" id="my-id-display">Connecting...</div>
                     </div>
                 </div>
-                <div style="border-bottom:3px solid #000; margin:10px 0;"></div>
+                
+                <div class="divider"></div>
                 <div id="friends-list-container"></div>
             </div>
 
             <div id="tab-identity" class="tab-content">
                 <div class="identity-wrapper">
                     <div class="identity-card">
-                        <div style="background:#000; color:#fff; padding:5px; font-weight:bold">> LICENSE</div>
+                        <div class="card-header">> FEELS LICENSE</div>
                         <div style="padding:15px">
                             <div class="info-row"><span>ID:</span> <span class="hand-drawn-text" id="card-id-text">...</span></div>
                             <div class="card-qr" id="qrcode"></div>
+                            <div style="text-align:center; margin-top:10px; font-size:12px;">Scan to feel together</div>
                         </div>
                     </div>
                 </div>
@@ -55,14 +69,20 @@
         <div id="view-chat" class="page right-sheet">
             <header class="meme-header chat-header">
                 <button id="chat-back-btn" class="meme-btn small">< BACK</button>
-                <div class="chat-info"><span id="chat-partner-name">User</span> <span id="chat-status-dot" class="status-square"></span></div>
+                <div class="chat-info">
+                    <span id="chat-partner-name">User</span> 
+                    <span id="chat-status-dot" class="status-square"></span>
+                </div>
             </header>
+            
             <div id="messages-container" class="messages-container"></div>
+            
             <div class="chat-footer">
                 <button id="sticker-btn" class="footer-icon">🤡</button>
                 <div class="input-box-border"><input type="text" id="chat-input" placeholder="Cope..."></div>
                 <button id="chat-send-btn" class="meme-btn">SEND</button>
             </div>
+            
             <div id="sticker-panel" class="sticker-panel hidden" style="display:none;">
                 <div class="sticker-grid" id="sticker-grid"></div>
             </div>
@@ -81,12 +101,14 @@
             <div class="modal-bar">ADD FREN <button class="close-x" onclick="hideAllModals()">X</button></div>
             <div class="modal-content">
                 <input type="text" id="manual-id-input" class="meme-input" placeholder="Paste ID...">
-                <button id="confirm-add-btn" class="meme-btn full">ADD</button>
+                <button id="confirm-add-btn" class="meme-btn full">CONNECT</button>
             </div>
         </div>
     </div>
 
     <audio id="msg-sound" src="https://www.myinstants.com/media/sounds/discord-notification.mp3"></audio>
+    <audio id="scan-sound" src="https://www.myinstants.com/media/sounds/success-sound-effect.mp3"></audio>
+
     <script src="app.js"></script>
 </body>
 </html>
