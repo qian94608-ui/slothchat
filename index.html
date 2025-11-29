@@ -5,71 +5,100 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="theme-color" content="#E6D3B3">
-    <title>WojakNet v13</title>
+    <title>WojakNet v14</title>
+    
     <link rel="stylesheet" href="style.css">
     <link rel="manifest" href="manifest.json">
+    
     <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
     <script src="https://unpkg.com/peerjs@1.5.1/dist/peerjs.min.js"></script>
     <script src="https://unpkg.com/html5-qrcode" type="text/javascript"></script>
 </head>
 <body>
-    <div id="app-root">
-        <div id="view-main" class="page active">
-            <header class="meme-header">
-                <div class="header-brand">WojakNet v13</div>
-                <div id="my-status" class="status-badge red">...</div>
-            </header>
-            <div class="action-bar">
-                <button id="scan-btn" class="meme-btn full-width">📷 SCAN</button>
-                <button id="add-id-btn" class="meme-btn full-width">➕ ADD ID</button>
-            </div>
-            <div id="tab-friends" class="tab-content">
-                <div class="list-title">MY FRENS</div>
-                <div class="k-list-item me-item">
-                    <div class="avatar-frame"><img id="my-avatar" class="avatar-img"></div>
-                    <div><div style="font-weight:bold">ME</div><div style="font-size:24px; color:blue;" id="my-id-display">...</div></div>
-                </div>
-                <div class="divider"></div>
-                <div id="friends-list-container"></div>
-                <div class="debug-log" id="debug-console"></div>
-            </div>
-            <div id="tab-identity" class="tab-content hidden">
-                <div class="identity-wrapper">
-                    <div class="identity-card">
-                        <div class="card-header">> ID CARD</div>
-                        <div style="padding:15px; text-align:center;">
-                            <div class="card-qr" id="qrcode"></div>
-                            <div style="font-size:30px; font-weight:bold; margin-top:10px;" id="card-id-text">....</div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-            <nav class="meme-bottom-nav">
-                <button class="nav-btn active" data-target="tab-friends">🐸 FRENS</button>
-                <button class="nav-btn" data-target="tab-identity">🚬 ID</button>
-            </nav>
-        </div>
+
+    <div class="header">
+        <div class="header-title">WojakNet v14</div>
+        <div id="status-bar" class="status-tag">INITIALIZING...</div>
+    </div>
+
+    <div class="main-scroll">
         
-        <div id="view-chat" class="page right-sheet">
-            <header class="meme-header chat-header">
-                <button id="chat-back-btn" class="meme-btn small">&lt; BACK</button>
-                <div class="chat-info"><span id="chat-partner-name">User</span> <span id="chat-status-dot" class="status-square"></span></div>
-            </header>
-            <div id="messages-container" class="messages-container"></div>
-            <div class="chat-footer">
-                <button id="sticker-btn" class="footer-icon">🤡</button>
-                <div class="input-box-border"><input type="text" id="chat-input" placeholder="Type..."></div>
-                <button id="chat-send-btn" class="meme-btn">SEND</button>
+        <div class="card">
+            <div class="card-title">> IDENTITY</div>
+            <div class="id-row">
+                <div class="qr-box" id="qrcode"></div>
+                <div>
+                    <div class="id-text" id="my-id">...</div>
+                    <div style="font-size:10px; color:#666; margin-top:5px;">Share this ID</div>
+                </div>
             </div>
-            <div id="sticker-panel" class="sticker-panel hidden"><div class="sticker-grid" id="sticker-grid"></div></div>
+        </div>
+
+        <div class="card" id="card-connect">
+            <div class="card-title">> CONNECT FREN</div>
+            <div class="input-group">
+                <input type="number" pattern="\d*" id="target-id" placeholder="4 Digit ID">
+                <button class="btn-icon" onclick="startScan()">📷</button>
+            </div>
+            <button class="btn-main" onclick="manualConnect()">CONNECT NOW</button>
+        </div>
+
+        <div class="card" id="card-transfer" style="display:none;">
+            <div class="card-title">> FILE STREAM</div>
+            <div class="drop-zone" id="drop-zone">
+                <div style="font-size: 2rem;">📂</div>
+                <div>DROP FILES HERE</div>
+            </div>
+            <input type="file" id="file-input" multiple style="display:none">
+            
+            <ul class="transfer-list" id="transfer-list">
+                </ul>
         </div>
     </div>
 
-    <div id="qr-overlay" class="modal-overlay hidden"><div class="modal-box scanner-box"><div class="modal-bar">SCAN <button class="close-x" onclick="hideAllModals()">X</button></div><div id="qr-reader"></div></div></div>
-    <div id="add-overlay" class="modal-overlay hidden"><div class="modal-box"><div class="modal-bar">ID <button class="close-x" onclick="hideAllModals()">X</button></div><div class="modal-content"><input type="number" id="manual-id-input" class="meme-input"><button id="confirm-add-btn" class="meme-btn full">ADD</button></div></div></div>
+    <div class="fab" id="fab" onclick="openChat()" style="display:none;">
+        💬
+        <div class="badge" id="chat-badge"></div>
+    </div>
+
+    <div class="chat-modal" id="chat-modal">
+        <div class="chat-box">
+            <div class="chat-header">
+                <span>💬 CHATROOM</span>
+                <button class="close-btn" onclick="closeChat()">X</button>
+            </div>
+            
+            <div class="chat-msgs" id="chat-msgs">
+                <div style="text-align:center; color:#666; margin-top:20px; font-size:0.8rem;">--- ENCRYPTED TUNNEL ---</div>
+            </div>
+            
+            <div class="emoji-panel" id="emoji-panel"></div>
+            
+            <div class="chat-footer">
+                <button class="btn-icon" onclick="document.getElementById('chat-file-input').click()">📁</button>
+                <button class="btn-icon" onclick="toggleEmoji()">🤡</button>
+                <div class="input-wrapper">
+                    <input type="text" class="chat-input" id="chat-input" placeholder="Cope..." autocomplete="off">
+                </div>
+                <button class="btn-icon send-btn" onclick="sendText()">➤</button>
+            </div>
+            <input type="file" id="chat-file-input" multiple style="display:none">
+        </div>
+    </div>
+
+    <div id="scanner-layer">
+        <div class="scanner-container">
+            <div id="reader" style="width:100%; height:300px; background:#000;"></div>
+            <button class="btn-main" style="margin-top:20px; background:red; color:white;" onclick="stopScan()">CLOSE CAMERA</button>
+        </div>
+    </div>
+
+    <div id="lightbox" onclick="this.style.display='none'"><img id="lb-img"></div>
+
+    <div id="toast">Message</div>
 
     <audio id="msg-sound" src="https://www.myinstants.com/media/sounds/discord-notification.mp3"></audio>
-    <audio id="scan-sound" src="https://www.myinstants.com/media/sounds/success-sound-effect.mp3"></audio>
+
     <script src="app.js"></script>
 </body>
 </html>
