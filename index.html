@@ -5,13 +5,13 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-    <title>WojakNet v24</title>
+    <title>WojakNet v25</title>
     
     <link rel="stylesheet" href="style.css">
     <link rel="manifest" href="manifest.json">
     <link rel="apple-touch-icon" href="https://upload.wikimedia.org/wikipedia/en/9/9a/Trollface_non-free.png">
     
-    <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+    <script src="https://cdn.socket.io/4.7.4/socket.io.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
     <script src="https://unpkg.com/html5-qrcode" type="text/javascript"></script>
 </head>
@@ -20,12 +20,13 @@
     <div id="app-root">
         <div id="view-main" class="page active">
             <header class="meme-header">
-                <button onclick="localStorage.clear();location.reload()" style="background:red; color:white; border:2px solid #000; font-weight:bold; font-size:10px; padding:2px;">
-                    ⚠ RESET
-                </button>
-                <div class="header-brand">WojakNet v24</div>
-                <div id="conn-status" class="status-badge red">Wait</div>
+                <div class="header-brand">WojakNet <span style="color:red;font-size:10px;">v25</span></div>
+                <div id="conn-status" class="status-badge red">INIT...</div>
             </header>
+
+            <div id="screen-log" style="background:#000; color:#0f0; font-family:monospace; font-size:10px; height:80px; overflow-y:scroll; padding:5px; margin:5px; border:2px solid red;">
+                > System Start...<br>
+            </div>
 
             <div class="coin-balance-card">
                 <div class="coin-label">IDENTITY</div>
@@ -33,7 +34,7 @@
                     <div id="qrcode" class="qr-small"></div>
                     <div class="coin-info">
                         <div class="coin-value" id="my-id-display">....</div>
-                        <div class="coin-name" id="my-nickname">Anon</div>
+                        <div class="coin-name" onclick="resetApp()" style="background:red; color:white; cursor:pointer;">⚠ FORCE RESET</div>
                     </div>
                 </div>
             </div>
@@ -43,22 +44,16 @@
                 <button id="add-id-btn" class="pepe-btn blue">➕ ADD ID</button>
             </div>
 
-            <div id="friends-list-container" class="list-container">
-                <div style="padding:20px; text-align:center; color:#999;">Loading Frens...</div>
-            </div>
+            <div id="friends-list-container" class="list-container"></div>
 
             <nav class="pepe-nav">
-                <button class="nav-item active" id="nav-home">HOME</button>
-                <button class="nav-item" id="nav-card">CARD</button>
+                <button class="nav-item active" onclick="switchTab('view-main')">HOME</button>
+                <button class="nav-item" onclick="switchTab('view-card')">CARD</button>
             </nav>
         </div>
 
         <div id="view-card" class="page right-sheet">
-            <header class="meme-header">
-                <button id="card-back-btn" class="back-btn">⬅</button>
-                <div class="header-brand">ID CARD</div>
-                <div style="width:30px"></div>
-            </header>
+            <header class="meme-header"><button class="back-btn" onclick="goBack()">⬅</button><span>ID CARD</span><div></div></header>
             <div class="cyber-card-wrapper">
                 <div class="cyber-card">
                     <div class="cyber-content">
@@ -71,19 +66,17 @@
 
         <div id="view-chat" class="page right-sheet">
             <header class="meme-header chat-mode">
-                <button id="chat-back-btn" class="back-btn">⬅</button>
+                <button class="back-btn" onclick="goBack()">⬅</button>
                 <div class="chat-title" id="chat-partner-name">User</div>
                 <div class="status-dot"></div>
             </header>
-
             <div id="messages-container" class="messages-container"></div>
-
             <div class="chat-footer">
                 <button id="sticker-btn" class="tool-btn">🐸</button>
                 <div class="input-box-border"><input type="text" id="chat-input" placeholder="Type..." autocomplete="off"></div>
                 <button id="chat-send-btn" class="send-btn">➤</button>
             </div>
-            <div id="sticker-panel" class="sticker-panel hidden"></div>
+            <div id="sticker-panel" class="sticker-panel hidden"><div class="sticker-grid" id="sticker-grid"></div></div>
         </div>
     </div>
 
@@ -100,8 +93,6 @@
     </div>
 
     <audio id="msg-sound" src="https://www.myinstants.com/media/sounds/discord-notification.mp3"></audio>
-    <audio id="success-sound" src="https://www.myinstants.com/media/sounds/coin-collect-sound-effect_1.mp3"></audio>
-
     <script src="app.js"></script>
 </body>
 </html>
