@@ -5,9 +5,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-    <title>PepeNet v27.1</title>
+    <title>WojakNet Beta 0.7</title>
     
-    <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;600;800&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@600;800&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="style.css">
     <link rel="manifest" href="manifest.json">
     <link rel="apple-touch-icon" href="https://cdn-icons-png.flaticon.com/512/12310/12310702.png">
@@ -20,103 +20,115 @@
 
     <div id="app-root">
         <div id="view-main" class="page active">
-            <header class="pepe-header">
-                <div class="logo-box">
-                    <img src="https://cdn-icons-png.flaticon.com/512/12310/12310702.png" class="logo-img">
-                    <span>PepeNet</span>
+            <header class="defi-header">
+                <div class="user-pill" onclick="editMyName()">
+                    <img id="my-avatar" class="header-avatar" src="">
+                    <span id="my-nickname">Anon</span>
+                    <span class="edit-icon">✎</span>
                 </div>
-                <div style="display:flex; gap:5px; align-items:center;">
-                    <button id="fm-btn" class="status-pill gray">📻 FM</button>
-                    <div id="conn-status" class="status-pill red">Wait</div>
+                <div class="header-right">
+                    <button id="fm-btn" class="icon-btn-round">📻</button>
+                    <div id="conn-status" class="status-dot red"></div>
                 </div>
             </header>
 
             <div class="scroll-content">
-                <div class="coin-balance-card">
-                    <div class="coin-label">IDENTITY</div>
-                    <div class="coin-row">
-                        <div id="qrcode" class="qr-small"></div>
-                        <div class="coin-info">
-                            <div class="coin-value" id="my-id-display">....</div>
-                            <div style="display:flex; gap:10px;">
-                                <div class="coin-name" id="my-nickname" onclick="editMyName()">Anon ✏️</div>
-                                <div class="coin-name" style="background:#ffcccc; color:red;" onclick="resetApp()">RESET</div>
-                            </div>
-                        </div>
+                <div class="defi-card">
+                    <div class="card-label">YOUR ID (BETA 0.7)</div>
+                    <div class="card-row">
+                        <div class="id-value" id="my-id-display">....</div>
+                        <div id="qrcode" class="qr-mini"></div>
                     </div>
+                    <div class="card-footer">Secure P2P Protocol</div>
                 </div>
 
-                <div class="action-grid">
-                    <button id="scan-btn" class="pepe-btn green">
-                        <span style="font-size:20px">📷</span> SCAN
+                <div class="action-row">
+                    <button id="scan-btn" class="action-btn">
+                        <div class="btn-icon">📷</div>
+                        <span>Scan</span>
                     </button>
-                    <button id="add-id-btn" class="pepe-btn blue">
-                        <span style="font-size:20px">➕</span> ADD ID
+                    <button id="add-id-btn" class="action-btn">
+                        <div class="btn-icon">➕</div>
+                        <span>Add ID</span>
                     </button>
                 </div>
 
-                <div class="list-container">
-                    <div class="list-title">Frens List 🐸</div>
-                    <div id="friends-list-container"></div>
-                </div>
+                <div class="section-title">CONTACTS</div>
+                <div id="friends-list-container" class="friends-list"></div>
             </div>
 
-            <nav class="pepe-nav">
-                <button class="nav-item active" onclick="switchTab('view-main')">HOME</button>
-                <button class="nav-item" onclick="switchTab('view-card')">CARD</button>
+            <nav class="defi-nav">
+                <button class="nav-item active" data-target="view-main">
+                    <div class="nav-icon">🏠</div>
+                </button>
+                <button class="nav-item" data-target="tab-identity">
+                    <div class="nav-icon">💳</div>
+                </button>
             </nav>
         </div>
 
-        <div id="view-card" class="page right-sheet">
-            <header class="pepe-header">
-                <button class="back-btn" onclick="goBack()">⬅</button>
-                <span style="font-weight:800;">ID CARD</span>
+        <div id="view-chat" class="page right-sheet">
+            <header class="defi-header chat-mode">
+                <button id="chat-back-btn" class="icon-btn-round">⬅</button>
+                <div class="chat-user-info" onclick="editFriendName()">
+                    <span id="chat-partner-name">User</span>
+                    <span id="chat-online-dot" class="status-indicator"></span>
+                </div>
+                <button class="icon-btn-round" style="opacity:0;">?</button>
+            </header>
+
+            <div id="drag-overlay" class="drag-overlay hidden">
+                <div class="drag-box">📂 RELEASE TO SEND</div>
+            </div>
+
+            <div id="messages-container" class="messages-container"></div>
+
+            <div class="chat-footer">
+                <button id="sticker-btn" class="footer-tool">😊</button>
+                <button id="file-btn" class="footer-tool" onclick="document.getElementById('chat-file-input').click()">📎</button>
+                
+                <div class="input-zone">
+                    <button id="voice-record-btn" class="voice-btn-long">HOLD TO SPEAK</button>
+                    
+                    <div id="text-input-wrapper" class="text-wrapper hidden">
+                        <input type="text" id="chat-input" placeholder="Message..." autocomplete="off">
+                        <button id="chat-send-btn" class="send-arrow">➤</button>
+                    </div>
+                </div>
+
+                <button id="mode-switch-btn" class="footer-tool">⌨️</button>
+            </div>
+
+            <div id="sticker-panel" class="sticker-panel hidden">
+                <div class="sticker-grid" id="sticker-grid"></div>
+            </div>
+        </div>
+
+        <div id="tab-identity" class="page hidden" style="background:#000; z-index:15;">
+             <header class="defi-header" style="background:#000; border-bottom:1px solid #0f0;">
+                <button class="icon-btn-round" onclick="closeIdentity()">⬅</button>
+                <span style="color:#0f0; font-weight:800;">CYBER ID</span>
                 <div style="width:30px"></div>
             </header>
             <div class="cyber-card-wrapper">
                 <div class="cyber-card">
+                    <div class="cyber-overlay"></div>
                     <div class="cyber-content">
-                        <div class="qr-img"></div>
-                        <div class="id-glitch" id="card-id-text">0000</div>
-                        <div style="font-size:10px; color:#0f0; margin-top:10px;">SCAN ME</div>
+                        <div class="cc-col cc-qr">
+                            <div class="qr-img"></div>
+                            <div class="cc-label">SCAN_ME</div>
+                        </div>
+                        <div class="cc-col cc-mid">
+                            <img id="card-avatar" class="cc-avatar" src="">
+                            <div class="cc-label">MEME_CITIZEN</div>
+                        </div>
+                        <div class="cc-col cc-id">
+                            <div class="id-glitch" id="card-id-text">0000</div>
+                            <div class="cc-label">ID_NO</div>
+                        </div>
                     </div>
+                    <div class="cyber-footer">WOJAK NET // BETA 0.7</div>
                 </div>
-            </div>
-        </div>
-
-        <div id="view-chat" class="page right-sheet">
-            <header class="pepe-header chat-mode">
-                <button id="chat-back-btn" class="back-btn">⬅</button>
-                <div class="chat-title" onclick="editFriendName()">
-                    <span id="chat-partner-name">User</span> <span style="font-size:10px">✏️</span>
-                </div>
-                <div id="chat-online-dot" class="status-dot"></div>
-            </header>
-
-            <div id="messages-container" class="messages-container"></div>
-
-            <div id="drag-overlay" class="drag-overlay hidden">
-                <div class="drag-box">📂 DROP FILE</div>
-            </div>
-
-            <div class="chat-footer">
-                <button id="sticker-btn" class="tool-btn">🐸</button>
-                <button id="mode-switch-btn" class="tool-btn">⌨️</button>
-                
-                <div id="input-mode-voice" class="input-wrapper">
-                    <button id="voice-record-btn" class="big-red-btn">HOLD TO SPEAK</button>
-                </div>
-
-                <div id="input-mode-text" class="input-wrapper hidden">
-                    <div class="input-box-border">
-                        <input type="text" id="chat-input" placeholder="Type..." autocomplete="off">
-                    </div>
-                    <button id="chat-send-btn" class="send-btn">➤</button>
-                </div>
-            </div>
-            
-            <div id="sticker-panel" class="sticker-panel hidden">
-                <div class="sticker-grid" id="sticker-grid"></div>
             </div>
         </div>
     </div>
@@ -127,8 +139,8 @@
         <div class="modal-box">
             <div class="modal-header">ADD FRIEND <button class="close-x" onclick="closeAllModals()">✕</button></div>
             <div class="modal-body">
-                <input type="number" id="manual-id-input" class="big-input" placeholder="1234">
-                <button id="confirm-add-btn" class="pepe-btn green full">CONNECT 🚀</button>
+                <input type="number" id="manual-id-input" class="defi-input" placeholder="1234">
+                <button id="confirm-add-btn" class="defi-btn-primary">CONNECT</button>
             </div>
         </div>
     </div>
@@ -136,7 +148,7 @@
     <audio id="msg-sound" src="https://www.myinstants.com/media/sounds/discord-notification.mp3"></audio>
     <audio id="success-sound" src="https://www.myinstants.com/media/sounds/coin-collect-sound-effect_1.mp3"></audio>
     <audio id="fm-radio" src="https://streams.ilovemusic.de/iloveradio1.mp3" preload="none"></audio>
-    <input type="file" id="global-file-input" style="display:none">
+    <input type="file" id="chat-file-input" style="display:none">
 
     <script src="app.js"></script>
 </body>
