@@ -1,6 +1,6 @@
 document.addEventListener('DOMContentLoaded', () => {
 
-    // --- 0. 日志与工具 ---
+    // --- 0. 日志系统 ---
     const debugEl = document.getElementById('debug-console');
     function log(msg) {
         if (!debugEl) return;
@@ -11,24 +11,10 @@ document.addEventListener('DOMContentLoaded', () => {
         console.log(msg);
     }
 
-    // --- 1. 配置 (STUN Servers) ---
-    // 关键修复：显式定义 STUN 服务器，帮助穿透 NAT
-    const PEER_CONFIG = {
-        debug: 1,
-        config: {
-            iceServers: [
-                { urls: 'stun:stun.l.google.com:19302' },
-                { urls: 'stun:stun1.l.google.com:19302' },
-                { urls: 'stun:stun2.l.google.com:19302' },
-                { urls: 'stun:stun3.l.google.com:19302' }
-            ]
-        }
-    };
+    // --- 1. ID 系统 (4位纯数字) ---
+    const PREFIX = 'wojak-v13-'; 
+    const DB_KEY = 'wojak_v13_db';
 
-    const PREFIX = 'wojak-v12-'; // 升级版本号隔离
-    const DB_KEY = 'wojak_v12_db';
-
-    // --- 2. 数据初始化 ---
     let db = JSON.parse(localStorage.getItem(DB_KEY));
     if (!db || !db.profile || db.profile.id.length !== 4) {
         db = {
@@ -46,7 +32,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const MY_ID_SHORT = db.profile.id;
     const MY_ID_FULL = PREFIX + MY_ID_SHORT;
 
-    // UI Render
+    // UI 显示
     document.getElementById('my-id-display').innerText = MY_ID_SHORT;
     document.getElementById('card-id-text').innerText = MY_ID_SHORT;
     document.getElementById('my-avatar').src = `https://api.dicebear.com/7.x/bottts/svg?seed=${db.profile.avatarSeed}`;
@@ -54,30 +40,58 @@ document.addEventListener('DOMContentLoaded', () => {
 
     log(`Init ID: ${MY_ID_SHORT}`);
 
-    // --- 3. 网络状态管理 ---
+    // --- 2. 网络配置 (关键修复：STUN + TURN) ---
+    // 使用 OpenRelay 的免费层级（如果有条件建议自己搭建 Coturn）
+    const PEER_CONFIG = {
+        debug: 1,
+        config: {
+            iceServers: [
+                { urls: 'stun:stun.l.google.com:19302' },
+                { urls: 'stun:global.stun.twilio.com:3478' },
+                // 下面是 OpenRelay 的免费 TURN (Project OpenRelay)
+                { 
+                    urls: "turn:openrelay.metered.ca:80",
+                    username: "openrelayproject",
+                    credential: "openrelayproject"
+                },
+                { 
+                    urls: "turn:openrelay.metered.ca:443",
+                    username: "openrelayproject",
+                    credential: "openrelayproject"
+                },
+                { 
+                    urls: "turn:openrelay.metered.ca:443?transport=tcp",
+                    username: "openrelayproject",
+                    credential: "openrelayproject"
+                }
+            ],
+            sdpSemantics: 'unified-plan'
+        }
+    };
+
+    // --- 3. 连接管理 (单向连接逻辑) ---
     let activeChatId = null;
     let connections = {}; 
-    let connectingLocks = {}; // 关键：防止重复连接锁
     let peer = null;
 
     try {
         peer = new Peer(MY_ID_FULL, PEER_CONFIG);
 
         peer.on('open', (id) => {
-            log(`Server Connected.`);
+            log(`Server OK. Ready.`);
             document.getElementById('my-status').innerText = "ONLINE";
             document.getElementById('my-status').className = "status-badge green";
-            reconnectAll();
+            attemptConnections(); // 启动连接循环
         });
 
+        // 被动接收连接
         peer.on('connection', (conn) => {
-            handleConnection(conn, 'incoming');
+            handleConnection(conn, 'INCOMING');
         });
 
         peer.on('error', (err) => {
-            // 忽略非致命错误
             if (err.type === 'peer-unavailable') {
-                // 对方不在线，这是正常的，等待下次重连
+                // 对方掉线，忽略
             } else if (err.type === 'disconnected') {
                 log("Disconnected. Reconnecting...");
                 peer.reconnect();
@@ -85,74 +99,79 @@ document.addEventListener('DOMContentLoaded', () => {
                 log(`Err: ${err.type}`);
             }
         });
-        
-        peer.on('disconnected', () => {
-            document.getElementById('my-status').innerText = "DISCONNECTED";
-            document.getElementById('my-status').className = "status-badge red";
-            // 尝试重连 PeerServer
-            setTimeout(() => { if(peer && !peer.destroyed) peer.reconnect(); }, 2000);
-        });
 
-    } catch(e) { log("PeerJS Crash"); }
+    } catch(e) { log("Peer Init Failed"); }
 
-    // 主动连接逻辑
-    function connectTo(shortId) {
-        if (shortId === MY_ID_SHORT) return;
-        
-        // 1. 检查是否已经连接
-        if (connections[shortId] && connections[shortId].open) return;
-        
-        // 2. 检查是否正在连接中 (防止 Negotiation failed)
-        if (connectingLocks[shortId]) return;
-
-        const fullId = PREFIX + shortId;
-        log(`Dialing ${shortId}...`);
-        
-        // 加锁
-        connectingLocks[shortId] = true;
-        
-        // 5秒后自动解锁，防止死锁
-        setTimeout(() => { connectingLocks[shortId] = false; }, 5000);
-
-        const conn = peer.connect(fullId, {
-            reliable: true,
-            serialization: 'json'
-        });
-        handleConnection(conn, 'outgoing');
+    // ★ 核心逻辑：谁负责发起连接？ ★
+    // 规则：ID 小的 连 ID 大的。
+    // 如果我 ID 是 1000，对方是 2000 -> 我连他。
+    // 如果我 ID 是 2000，对方是 1000 -> 我等他连我。
+    // 这避免了 "Negotiation failed"（两个人都同时拨号占线）。
+    
+    function shouldIConnect(theirShortId) {
+        const myVal = parseInt(MY_ID_SHORT);
+        const theirVal = parseInt(theirShortId);
+        return myVal < theirVal;
     }
 
+    function attemptConnections() {
+        if (!peer || peer.destroyed) return;
+
+        db.friends.forEach(f => {
+            const shortId = f.id;
+            
+            // 如果已经连接，跳过
+            if (connections[shortId] && connections[shortId].open) return;
+
+            // 只有当我ID比对方小时，我才主动发起
+            if (shouldIConnect(shortId)) {
+                log(`Dialing ${shortId} (I am smaller)...`);
+                const conn = peer.connect(PREFIX + shortId, {
+                    reliable: false, // 使用 UDP，穿透更好
+                    serialization: 'json'
+                });
+                handleConnection(conn, 'OUTGOING');
+            } else {
+                // 否则我什么都不做，等待对方连我 (Listen Mode)
+                // log(`Waiting for ${shortId} (I am bigger)...`);
+            }
+        });
+    }
+    
+    // 心跳轮询 (每5秒检查一次)
+    setInterval(attemptConnections, 5000);
+
+
+    // --- 4. 连接处理 ---
     function handleConnection(conn, type) {
         const remoteShortId = conn.peer.replace(PREFIX, '');
 
+        // 无论出入，一旦 open 就是成功
         conn.on('open', () => {
-            log(`Link OK: ${remoteShortId} (${type})`);
+            log(`LINK ESTABLISHED: ${remoteShortId}`);
             
-            // 连接成功，移除锁
-            connectingLocks[remoteShortId] = false;
+            // 存入连接池
             connections[remoteShortId] = conn;
-
+            
             // 确保好友在列表
             addFriendLocal(remoteShortId);
             
-            // ★ 延迟握手：等待 WebRTC 通道稳定 ★
-            setTimeout(() => {
-                conn.send({ type: 'SYN', from: MY_ID_SHORT });
-            }, 500);
-
+            // 发送握手确认
+            conn.send({ type: 'SYN', from: MY_ID_SHORT });
+            
             renderFriends();
             updateChatStatus(remoteShortId);
         });
 
         conn.on('data', (d) => {
             if (d.type === 'SYN') {
-                log(`Rx SYN < ${d.from}`);
-                addFriendLocal(d.from); 
-                renderFriends();
-                // 回复 ACK
+                // 收到握手，回一个 ACK
                 conn.send({ type: 'ACK', from: MY_ID_SHORT });
-            } 
+                addFriendLocal(d.from);
+                renderFriends();
+            }
             else if (d.type === 'ACK') {
-                log(`Rx ACK < ${d.from}. Ready.`);
+                // 握手完成
                 renderFriends();
                 updateChatStatus(d.from);
             }
@@ -165,38 +184,26 @@ document.addEventListener('DOMContentLoaded', () => {
         });
 
         conn.on('close', () => {
-            log(`Link Closed: ${remoteShortId}`);
+            log(`Closed: ${remoteShortId}`);
             delete connections[remoteShortId];
-            connectingLocks[remoteShortId] = false;
             renderFriends();
             updateChatStatus(remoteShortId);
         });
 
         conn.on('error', (err) => {
             log(`ConnErr ${remoteShortId}: ${err}`);
-            connectingLocks[remoteShortId] = false;
+            delete connections[remoteShortId];
         });
     }
 
-    // 慢速重连 (改为5秒，给协商留出时间)
-    function reconnectAll() {
-        db.friends.forEach(f => {
-            const conn = connections[f.id];
-            if (!conn || !conn.open) {
-                connectTo(f.id);
-            }
-        });
-    }
-    setInterval(reconnectAll, 5000);
 
-
-    // --- 4. 业务逻辑 (好友/消息) ---
+    // --- 5. 业务逻辑 (好友/消息) ---
     function addFriendLocal(id) {
         if (!id || id.length !== 4) return;
         if (!db.friends.find(f => f.id === id)) {
             db.friends.push({ id: id, addedAt: Date.now() });
             saveDB();
-            log(`Added friend ${id}`);
+            log(`New Friend Saved: ${id}`);
         }
     }
 
@@ -285,7 +292,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 appendMsgDOM(txt, true, 'text');
                 input.value = '';
             } else {
-                alert("OFFLINE. Cannot send.");
+                alert("OFFLINE. Wait for green light.");
+                // 可以在这里强制尝试连接
+                if(shouldIConnect(activeChatId)) connectTo(activeChatId);
             }
         }
     }
@@ -300,7 +309,7 @@ document.addEventListener('DOMContentLoaded', () => {
         container.scrollTop = container.scrollHeight;
     }
 
-    // --- 5. UI 事件绑定 ---
+    // --- 6. UI 绑定 ---
     document.getElementById('chat-send-btn').onclick = sendText;
     document.getElementById('chat-input').onkeypress = (e) => { if(e.key==='Enter') sendText(); };
     
@@ -310,12 +319,10 @@ document.addEventListener('DOMContentLoaded', () => {
         activeChatId = null;
     };
 
-    // 模态框逻辑
-    const hideAllModals = () => {
+    window.hideAllModals = () => {
         document.querySelectorAll('.modal-overlay').forEach(el => el.classList.add('hidden'));
         if(window.scannerObj) window.scannerObj.stop().catch(()=>{});
     }
-    window.hideAllModals = hideAllModals;
 
     document.getElementById('add-id-btn').onclick = () => document.getElementById('add-overlay').classList.remove('hidden');
     
@@ -324,15 +331,13 @@ document.addEventListener('DOMContentLoaded', () => {
         if(id.length === 4) {
             hideAllModals();
             addFriendLocal(id);
-            connectTo(id); // 立即尝试连接
+            // 立即触发一次尝试
+            attemptConnections(); 
             openChat(id);
         } else { alert("ID must be 4 digits"); }
     };
 
     document.getElementById('scan-btn').onclick = () => {
-        if (!window.isSecureContext && window.location.hostname !== 'localhost') {
-            alert("HTTPS Required for Camera"); return;
-        }
         document.getElementById('qr-overlay').classList.remove('hidden');
         setTimeout(() => {
             const scanner = new Html5Qrcode("qr-reader");
@@ -342,14 +347,13 @@ document.addEventListener('DOMContentLoaded', () => {
                 document.getElementById('scan-sound').play().catch(()=>{});
                 if(txt.length === 4) {
                     addFriendLocal(txt);
-                    connectTo(txt);
+                    attemptConnections();
                     openChat(txt);
                 }
             });
         }, 300);
     };
 
-    // Nav
     const tabs = document.querySelectorAll('.nav-btn');
     tabs.forEach(btn => {
         btn.onclick = () => {
