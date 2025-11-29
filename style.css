@@ -1,17 +1,19 @@
 :root { --wojak-skin: #E6D3B3; --meme-font: "Comic Sans MS", monospace; }
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; outline: none; user-select: none; }
 
-body { margin: 0; padding: 0; font-family: var(--meme-font); background-color: #D4C4A8; height: 100vh; overflow: hidden; }
+body { 
+    margin: 0; padding: 0; font-family: var(--meme-font); background-color: #D4C4A8; 
+    height: 100vh; overflow: hidden; 
+}
 
-/* 页面布局系统 (修复版) */
+/* 核心布局: iOS Safe Area */
 .page {
-    position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+    position: fixed; top: 0; left: 0; right: 0; bottom: 0;
     background: #D4C4A8; display: flex; flex-direction: column;
-    transition: transform 0.25s ease-out; z-index: 10;
+    z-index: 10; transition: transform 0.25s ease-out;
 }
 .page.right-sheet { transform: translateX(100%); z-index: 20; background: #fff; }
 .page.active { transform: translateX(0); }
-
 .hidden { display: none !important; }
 
 /* 头部 */
@@ -21,21 +23,48 @@ body { margin: 0; padding: 0; font-family: var(--meme-font); background-color: #
 }
 .header-brand { font-weight: bold; font-size: 18px; text-decoration: underline; }
 .status-badge { font-size: 10px; padding: 2px 5px; color: white; font-weight: bold; border: 1px solid #000; }
-.status-badge.red { background: red; }
-.status-badge.green { background: green; }
+.status-badge.red { background: red; } .status-badge.green { background: #00FF00; color: #000; }
+.fm-btn { font-size: 10px; background: #333; color: #0f0; border: 1px solid #000; cursor: pointer; }
 
-/* 列表与内容 */
-.tab-content { flex: 1; overflow-y: auto; padding: 10px; padding-bottom: 80px; }
-.list-title { font-weight: bold; border-bottom: 2px dashed #000; margin-bottom: 10px; }
-
+/* 列表 */
+.tab-content { flex: 1; overflow-y: auto; padding: 10px; padding-bottom: 90px; } /* 底部留白给 Nav */
 .k-list-item { 
     display: flex; align-items: center; gap: 10px; padding: 10px; 
     background: #E6D3B3; border: 2px solid #000; margin-bottom: 8px; 
-    box-shadow: 4px 4px 0 #000; cursor: pointer; 
+    box-shadow: 4px 4px 0 #000; cursor: pointer; transition: transform 0.1s;
 }
 .k-list-item:active { transform: translate(2px, 2px); box-shadow: 2px 2px 0 #000; }
+/* 列表抖动动画 */
+.k-list-item.shake { animation: shake 0.5s cubic-bezier(.36,.07,.19,.97) both; background: #fff5ba; }
+@keyframes shake {
+  10%, 90% { transform: translate3d(-1px, 0, 0); }
+  20%, 80% { transform: translate3d(2px, 0, 0); }
+  30%, 50%, 70% { transform: translate3d(-4px, 0, 0); }
+  40%, 60% { transform: translate3d(4px, 0, 0); }
+}
+
 .avatar-frame { width: 45px; height: 45px; border: 2px solid #000; background: #fff; }
 .avatar-img { width: 100%; height: 100%; object-fit: cover; }
+
+/* --- 赛博朋克 ID 卡片 --- */
+.cyber-card-wrapper { display: flex; justify-content: center; padding-top: 20px; }
+.cyber-card {
+    width: 340px; height: 200px; background: #000; border: 4px solid #00FF00;
+    position: relative; overflow: hidden; display: flex; flex-direction: column;
+    box-shadow: 0 0 15px rgba(0,255,0,0.5); color: #00FF00; font-family: monospace;
+}
+.cyber-content { display: grid; grid-template-columns: 1fr 1fr 1fr; height: 100%; padding: 10px; gap: 10px; z-index: 2; }
+.cc-col { display: flex; flex-direction: column; align-items: center; justify-content: center; border: 1px solid #333; background: rgba(0,25,0,0.5); }
+.cc-label { font-size: 10px; margin-top: 5px; opacity: 0.8; }
+.qr-img { background: #fff; padding: 2px; }
+.cc-avatar { width: 60px; height: 60px; border-radius: 50%; border: 2px solid #00FF00; }
+.id-glitch { font-size: 24px; font-weight: bold; letter-spacing: 2px; text-shadow: 2px 2px #FF00FF; }
+.cyber-footer { background: #00FF00; color: #000; text-align: right; padding: 2px 10px; font-size: 10px; font-weight: bold; }
+.cyber-overlay {
+    position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+    background: repeating-linear-gradient(0deg, transparent 0px, transparent 2px, rgba(0,255,0,0.1) 3px);
+    pointer-events: none; z-index: 1;
+}
 
 /* 聊天 */
 .messages-container { 
@@ -46,62 +75,58 @@ body { margin: 0; padding: 0; font-family: var(--meme-font); background-color: #
     padding: 8px 12px; border: 2px solid #000; font-size: 16px; 
     box-shadow: 3px 3px 0px #000; background: #eee; word-break: break-all; max-width: 80%;
 }
-.msg-row { display: flex; width: 100%; }
-.msg-row.self { justify-content: flex-end; } 
-.msg-row.self .bubble { background: #bdfcc9; }
-.msg-row.other { justify-content: flex-start; }
+.msg-row.self { align-self: flex-end; } .msg-row.self .bubble { background: #bdfcc9; }
+.msg-row.other { align-self: flex-start; }
 
-.sticker-img { width: 100px; border: 2px solid #000; box-shadow: 3px 3px 0 #000; }
-.img-preview { max-width: 200px; border: 2px solid #000; border-radius: 5px; }
-
-/* 聊天底部 */
+/* 聊天底部 (语音优先) */
 .chat-footer { 
-    height: 60px; flex-shrink: 0; padding: 5px 10px; background: var(--wojak-skin); 
-    border-top: 3px solid #000; display: flex; gap: 5px; align-items: center; 
-    padding-bottom: max(5px, env(safe-area-inset-bottom));
+    height: 70px; flex-shrink: 0; padding: 5px 10px; background: var(--wojak-skin); 
+    border-top: 3px solid #000; display: flex; gap: 8px; align-items: center; 
+    padding-bottom: max(10px, env(safe-area-inset-bottom)); /* iOS 适配 */
 }
-.input-box-border { flex: 1; border: 2px solid #000; background: #fff; }
-#chat-input { width: 100%; border: none; font-size: 16px; padding: 8px; font-family: var(--meme-font); outline:none; }
-.footer-icon { font-size: 24px; background: none; border: none; cursor: pointer; padding: 0 5px; }
+.input-area { flex: 1; display: flex; gap: 5px; height: 100%; }
+.input-box-border { flex: 1; border: 2px solid #000; background: #fff; display: flex; align-items: center;}
+#chat-input { width: 100%; border: none; font-size: 16px; padding: 5px; font-family: var(--meme-font); }
+.footer-icon { font-size: 28px; background: none; border: none; cursor: pointer; padding: 0; }
 
-/* 按钮 */
-.meme-btn { 
-    font-weight: bold; background: #FFF; color: #000; border: 2px solid #000; 
-    box-shadow: 3px 3px 0px #000; padding: 5px 10px; cursor: pointer;
+/* 红色语音按钮 */
+.voice-btn {
+    width: 100%; height: 100%; background: #FF0000; color: #fff; border: 3px solid #000;
+    font-weight: bold; font-size: 18px; box-shadow: 2px 2px 0 #000; cursor: pointer;
+    display: flex; align-items: center; justify-content: center; user-select: none;
 }
-.meme-btn:active { transform: translate(2px, 2px); box-shadow: 1px 1px 0px #000; background: #ddd; }
-.full-width { flex: 1; height: 40px; margin: 0 5px; }
-.action-bar { padding: 10px 5px; display: flex; }
+.voice-btn:active, .voice-btn.recording { background: #cc0000; transform: translate(2px, 2px); box-shadow: none; }
 
-/* 导航 */
+/* 拖拽遮罩 */
+.drag-overlay { 
+    position: absolute; inset: 0; background: rgba(0,0,0,0.8); z-index: 50; 
+    display: flex; justify-content: center; align-items: center; color: #fff; font-size: 24px; font-weight: bold; border: 5px dashed #fff; margin: 20px;
+}
+
+/* 导航 (iOS 适配) */
 .meme-bottom-nav { 
-    height: 60px; display: flex; border-top: 3px solid #000; background: var(--wojak-skin); 
-    position: absolute; bottom: 0; width: 100%; z-index: 30; padding-bottom: env(safe-area-inset-bottom); 
+    height: 70px; display: flex; border-top: 3px solid #000; background: var(--wojak-skin); 
+    position: absolute; bottom: 0; width: 100%; z-index: 30; 
+    padding-bottom: env(safe-area-inset-bottom); /* iOS 适配 */
 }
 .nav-btn { flex: 1; background: none; border: none; font-weight: bold; border-right: 2px solid #000; font-size: 16px; }
 .nav-btn.active { background: #fff; box-shadow: inset 0px -5px 0px #ccc; }
 
-/* 弹窗遮罩 */
-.modal-overlay { 
-    position: fixed; top: 0; left: 0; width: 100%; height: 100%; 
-    background: rgba(0,0,0,0.8); z-index: 9999; 
-    display: flex; justify-content: center; align-items: center; 
-}
-.modal-box { background: #FFF8E7; border: 4px solid #000; box-shadow: 8px 8px 0px #000; width: 90%; max-width: 320px; }
+/* 状态灯 */
+.status-dot { width: 15px; height: 15px; border: 2px solid #000; background: red; margin-left: 5px; display: inline-block; }
+.status-dot.online { background: #00FF00; }
+
+/* 模态框 & 扫描器 */
+.modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.8); z-index: 9999; display: flex; justify-content: center; align-items: center; }
+.modal-box { background: #FFF8E7; border: 4px solid #000; width: 90%; max-width: 320px; }
 .modal-bar { background: #000; color: #fff; padding: 5px; font-weight: bold; display: flex; justify-content: space-between; }
 .close-x { background: red; color: white; border: 1px solid white; cursor: pointer; }
-.modal-content { padding: 20px; }
-.meme-input { width: 100%; border: 2px solid #000; padding: 10px; font-size: 20px; text-align: center; margin-bottom: 10px; }
 #qr-reader { width: 100%; min-height: 250px; background: #000; }
 
-.status-square { width: 10px; height: 10px; background: red; border: 1px solid #000; margin-left: 5px; display: inline-block; }
-.status-square.online { background: #00FF00; }
-
-/* 表情面板 */
-.sticker-panel { height: 150px; overflow-y: auto; padding: 10px; border-top: 2px solid #000; background: #fff; }
+/* Sticker */
+.sticker-panel { height: 200px; overflow-y: auto; padding: 10px; border-top: 2px solid #000; background: #fff; }
 .sticker-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
-
-/* 进度条样式 (Mochi逻辑移植) */
-.progress-bar-container { width: 100%; height: 5px; background: #eee; border: 1px solid #000; margin-top: 5px; }
-.progress-fill { height: 100%; background: #00FF00; width: 0%; transition: width 0.2s; }
-.file-card { background: #fff; padding: 5px; border: 1px dashed #000; font-size: 12px; }
+.sticker-item { width: 100%; border: 2px solid transparent; cursor: pointer; }
+.sticker-item:active { background: #eee; border-color: #000; }
+.sticker-preview { width: 100px; border: 2px solid #000; }
+.file-preview-box { padding: 5px; background: #f9f9f9; border: 1px dashed #000; display: inline-block; cursor: pointer; }
