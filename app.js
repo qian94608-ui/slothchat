@@ -6,10 +6,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // --- 1. 全局工具函数 ---
     window.closeAllModals = () => {
         document.querySelectorAll('.modal-overlay').forEach(e => e.classList.add('hidden'));
-        // 安全停止扫描器
-        if(window.scanner && window.scanner.getState() === Html5QrcodeScannerState.SCANNING) {
-            window.scanner.stop().then(() => console.log("Scanner stopped")).catch(err => console.error(err));
-        }
+        if(window.scanner) window.scanner.stop().catch(()=>{});
     };
 
     window.switchTab = (id) => {
@@ -17,20 +14,30 @@ document.addEventListener('DOMContentLoaded', () => {
             if(p.id === id) { p.classList.add('active'); p.classList.remove('right-sheet'); }
             else if(p.id !== 'view-main') p.classList.remove('active');
         });
+        if(id === 'tab-identity') {
+            document.getElementById('tab-identity').classList.remove('hidden');
+            document.getElementById('tab-identity').style.display = 'block';
+        }
+    };
+    
+    window.closeIdentity = () => {
+        document.getElementById('tab-identity').classList.add('hidden');
+        document.getElementById('tab-identity').style.display = 'none';
     };
 
     window.goBack = () => {
         document.getElementById('view-chat').classList.remove('active');
         setTimeout(()=>document.getElementById('view-chat').classList.add('right-sheet'), 300);
-        document.getElementById('view-identity').classList.remove('active');
-        setTimeout(()=>document.getElementById('view-identity').classList.add('right-sheet'), 300);
         activeChatId = null;
     };
-
-    window.resetApp = () => { if(confirm("Reset Data?")) { localStorage.clear(); location.reload(); } };
+    
+    // 手动重连
+    window.forceReconnect = () => {
+        if(socket) { socket.disconnect(); socket.connect(); }
+    };
 
     // --- 2. 数据层 ---
-    const DB_KEY = 'pepe_v27_stable';
+    const DB_KEY = 'pepe_beta09_final';
     let db;
     try {
         db = JSON.parse(localStorage.getItem(DB_KEY));
@@ -59,54 +66,43 @@ document.addEventListener('DOMContentLoaded', () => {
 
     renderFriends();
 
-    // --- 3. 核心功能实现 (逻辑修复) ---
+    // --- 3. 核心功能 ---
 
-    // A. 添加好友 (防抖 + 自动重连)
+    // A. 添加好友
     function handleAddFriend(id) {
         if(id === MY_ID) return;
-        
-        // 1. 存本地
         if(!db.friends.find(f => f.id === id)) {
             db.friends.push({ id: id, addedAt: Date.now(), alias: `User ${id}` });
             saveDB();
             renderFriends();
         }
-        
-        // 2. 确保网络连接
-        if(!socket || !socket.connected) {
-            console.log("Socket disconnected, trying to reconnect...");
-            socket.connect();
-        }
-        
-        // 3. 跳转
         openChat(id);
     }
 
-    // B. 扫码 (优雅停止)
+    // B. 扫码 (稳如老狗逻辑)
     document.getElementById('scan-btn').onclick = () => {
         document.getElementById('qr-overlay').classList.remove('hidden');
         setTimeout(() => {
             const scanner = new Html5Qrcode("qr-reader");
             window.scanner = scanner;
             scanner.start({facingMode:"environment"}, {fps:10, qrbox:200}, txt => {
-                // 成功扫码
+                // 1. 成功反馈
                 document.getElementById('success-sound').play().catch(()=>{});
                 if(navigator.vibrate) navigator.vibrate(200);
                 
-                // 关键：先停止，再处理逻辑
+                // 2. 优雅停止，防止卡死
                 scanner.stop().then(() => {
                     window.closeAllModals();
                     if(txt.length === 4) {
                         handleAddFriend(txt);
                     } else {
-                        alert("Invalid QR Code");
+                        alert("Invalid Code");
                     }
                 }).catch(err => {
-                    console.error("Stop failed", err);
+                    console.error("Stop error", err);
                     window.closeAllModals();
                 });
-                
-            }).catch(e=>{ console.log(e); });
+            }).catch(e=>{ alert("Camera Error"); window.closeAllModals(); });
         }, 300);
     };
 
@@ -121,7 +117,7 @@ document.addEventListener('DOMContentLoaded', () => {
         } else { alert("Must be 4 digits"); }
     };
 
-    // --- 4. 聊天与网络 ---
+    // --- 4. 网络层 ---
     let socket = null;
     let activeChatId = null;
 
@@ -129,8 +125,7 @@ document.addEventListener('DOMContentLoaded', () => {
     else {
         socket = io(SERVER_URL, { 
             reconnection: true,
-            reconnectionAttempts: Infinity,
-            transports: ['websocket'] // 强制 websocket
+            transports: ['websocket']
         });
         
         socket.on('connect', () => {
@@ -144,7 +139,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         socket.on('receive_msg', (msg) => {
             const fid = msg.from;
-            // 被动添加好友
+            // 自动加好友
             if(!db.friends.find(f => f.id === fid)) {
                 db.friends.push({ id: fid, addedAt: Date.now(), alias: `User ${fid}` });
             }
@@ -157,14 +152,6 @@ document.addEventListener('DOMContentLoaded', () => {
             else document.getElementById('msg-sound').play().catch(()=>{});
         });
     }
-    
-    // 手动重连
-    window.forceReconnect = () => {
-        if(socket) {
-            socket.disconnect();
-            socket.connect();
-        }
-    };
 
     function renderFriends() {
         const list = document.getElementById('friends-list-container');
@@ -195,8 +182,6 @@ document.addEventListener('DOMContentLoaded', () => {
         container.innerHTML = '';
         const msgs = db.history[id] || [];
         msgs.forEach(m => appendMsgDOM(m, m.isSelf));
-        // 自动重连一下，确保在线
-        if(socket && !socket.connected) socket.connect();
     }
 
     function sendData(type, content, fileName = null) {
@@ -232,11 +217,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if(txt) { sendData('text', txt); document.getElementById('chat-input').value=''; }
     };
     
-    document.getElementById('chat-back-btn').onclick = () => {
-        document.getElementById('view-chat').classList.remove('active');
-        setTimeout(()=>document.getElementById('view-chat').classList.add('right-sheet'), 300);
-        activeChatId = null;
-    };
+    document.getElementById('chat-back-btn').onclick = window.goBack;
 
     const modeSwitch = document.getElementById('mode-switch-btn');
     let isVoice = true;
@@ -253,7 +234,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     };
 
-    // Voice
+    // Voice Record
     let mediaRecorder, audioChunks;
     const voiceBtn = document.getElementById('voice-record-btn');
     const startRec = async () => {
