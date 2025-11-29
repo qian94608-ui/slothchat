@@ -10,3 +10,4 @@ self.addEventListener('fetch', e => e.respondWith(caches.match(e.request).then(r
 self.addEventListener('activate', e => e.waitUntil(caches.keys().then(k => Promise.all(k.map(n => n!==CACHE_NAME?caches.delete(n):null)))));
 
 
+
