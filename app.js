@@ -1,188 +1,137 @@
 document.addEventListener('DOMContentLoaded', () => {
 
-    // =================================================================
-    // ★★★ 核心配置 (请填入你的 Render 地址) ★★★
-    const SERVER_URL = 'https://wojak-backend.onrender.com'; 
-    const DB_KEY = 'pepe_v23_final_db';
-    // =================================================================
+    // ========================================================
+    // 1. 安全配置 (Safe Config)
+    // ========================================================
+    // 如果没有 Render，用这个公共测试服至少能让状态变绿
+    const SERVER_URL = 'https://socket-io-chat.now.sh'; 
+    const DB_KEY = 'pepe_v24_safe_db';
 
-    console.log("App Starting...");
+    // 全局函数：关闭所有弹窗
+    window.closeAll = () => {
+        document.querySelectorAll('.modal-overlay').forEach(e => e.classList.add('hidden'));
+        if(window.scanner) window.scanner.stop().catch(()=>{});
+    };
 
-    // --- 1. 数据层 (Model) ---
-    // 负责数据的读取和存储，不依赖网络
+    // ========================================================
+    // 2. 优先绑定 UI (Binding UI First)
+    // 即使后面报错，这些按钮也必须能用
+    // ========================================================
+    
+    // 导航
+    const navHome = document.getElementById('nav-home');
+    const navCard = document.getElementById('nav-card');
+    
+    if(navHome) navHome.onclick = () => {
+        document.getElementById('view-main').classList.add('active');
+        document.getElementById('view-card').classList.remove('active');
+        document.getElementById('view-chat').classList.remove('active');
+    };
+    
+    if(navCard) navCard.onclick = () => {
+        document.getElementById('view-card').classList.add('active');
+        document.getElementById('view-card').classList.remove('right-sheet');
+    };
+
+    // Card Back
+    const cardBack = document.getElementById('card-back-btn');
+    if(cardBack) cardBack.onclick = () => {
+        document.getElementById('view-card').classList.remove('active');
+        setTimeout(() => document.getElementById('view-card').classList.add('right-sheet'), 300);
+    };
+
+    // Chat Back
+    const chatBack = document.getElementById('chat-back-btn');
+    if(chatBack) chatBack.onclick = () => {
+        document.getElementById('view-chat').classList.remove('active');
+        setTimeout(() => document.getElementById('view-chat').classList.add('right-sheet'), 300);
+    };
+
+    // 呼出添加
+    const addBtn = document.getElementById('add-id-btn');
+    if(addBtn) addBtn.onclick = () => document.getElementById('add-overlay').classList.remove('hidden');
+
+    // 确认添加
+    const confirmBtn = document.getElementById('confirm-add-btn');
+    if(confirmBtn) confirmBtn.onclick = () => {
+        const id = document.getElementById('manual-id-input').value;
+        if(id.length === 4) {
+            window.closeAll();
+            addFriend(id);
+            openChat(id);
+        } else { alert("ID Must be 4 digits"); }
+    };
+
+    // 呼出扫码
+    const scanBtn = document.getElementById('scan-btn');
+    if(scanBtn) scanBtn.onclick = () => {
+        document.getElementById('qr-overlay').classList.remove('hidden');
+        setTimeout(startScanner, 500);
+    };
+
+    // 发送消息
+    const sendBtn = document.getElementById('chat-send-btn');
+    if(sendBtn) sendBtn.onclick = sendText;
+
+    // 表情开关
+    document.getElementById('sticker-btn').onclick = () => document.getElementById('sticker-panel').classList.toggle('hidden');
+
+
+    // ========================================================
+    // 3. 数据层 (Data Layer)
+    // ========================================================
     let db;
     try {
         db = JSON.parse(localStorage.getItem(DB_KEY));
-        // 数据校验，防止坏档
-        if (!db || !db.profile || !db.friends) throw new Error("Data Corrupt");
+        if(!db || !db.profile) throw new Error("Reset");
     } catch(e) {
-        console.log("Creating new DB...");
-        db = {
-            profile: { 
-                id: String(Math.floor(1000 + Math.random() * 9000)), // 4位随机ID
-                avatarSeed: Math.random(), 
-                nickname: 'Anon' 
-            },
-            friends: [], 
-            history: {}
+        db = { 
+            profile: { id: String(Math.floor(1000 + Math.random() * 9000)), seed: Math.random() },
+            friends: [], history: {}
         };
         localStorage.setItem(DB_KEY, JSON.stringify(db));
     }
     const saveDB = () => localStorage.setItem(DB_KEY, JSON.stringify(db));
     const MY_ID = db.profile.id;
 
-    // --- 2. 界面初始化 (View) ---
-    // 立即渲染，不等待任何东西
+    // 渲染个人信息
     document.getElementById('my-id-display').innerText = MY_ID;
     document.getElementById('card-id-text').innerText = MY_ID;
-    document.getElementById('my-nickname').innerText = db.profile.nickname;
-    document.getElementById('my-avatar').src = `https://api.dicebear.com/7.x/open-peeps/svg?seed=${db.profile.avatarSeed}`;
+    document.getElementById('my-avatar').src = `https://api.dicebear.com/7.x/open-peeps/svg?seed=${db.profile.seed}`;
     
-    // 渲染二维码
+    // QR Code
     if(window.QRCode) {
         document.getElementById("qrcode").innerHTML = "";
-        new QRCode(document.getElementById("qrcode"), { text: MY_ID, width: 60, height: 60, colorDark: "#388E3C", colorLight: "#FFFFFF" });
-        const cardQr = document.querySelector(".qr-img");
-        if(cardQr) {
-            cardQr.innerHTML = "";
-            new QRCode(cardQr, { text: MY_ID, width: 60, height: 60 });
-        }
+        new QRCode(document.getElementById("qrcode"), { text: MY_ID, width: 50, height: 50 });
+        document.querySelector(".qr-img").innerHTML = "";
+        new QRCode(document.querySelector(".qr-img"), { text: MY_ID, width: 80, height: 80 });
     }
 
-    // 渲染好友列表
     renderFriends();
 
-    // --- 3. 交互事件绑定 (Controller) ---
-    // 必须在 DOMContentLoaded 立即绑定，确保点击有效
 
-    // 全局弹窗关闭
-    window.closeAllModals = () => {
-        document.querySelectorAll('.modal-overlay').forEach(e => e.classList.add('hidden'));
-        if(window.scanner) window.scanner.stop().catch(()=>{});
-    };
-
-    // 导航切换 (Tab)
-    document.querySelectorAll('.nav-item').forEach(btn => {
-        btn.onclick = () => {
-            document.querySelectorAll('.nav-item').forEach(b => b.classList.remove('active'));
-            document.querySelectorAll('.tab-content').forEach(c => {
-                c.classList.add('hidden'); 
-                c.style.display = 'none'; // 强制隐藏
-            });
-            
-            btn.classList.add('active');
-            const targetId = btn.getAttribute('data-target');
-            const targetEl = document.getElementById(targetId);
-            if(targetEl) {
-                targetEl.classList.remove('hidden');
-                targetEl.style.display = 'block'; // 强制显示
-            }
-        };
-    });
-
-    // 呼出添加框
-    document.getElementById('add-id-btn').onclick = () => {
-        document.getElementById('add-overlay').classList.remove('hidden');
-        setTimeout(() => document.getElementById('manual-id-input').focus(), 100);
-    };
-
-    // 确认添加 (核心修复)
-    document.getElementById('confirm-add-btn').onclick = () => {
-        const input = document.getElementById('manual-id-input');
-        const id = input.value.trim();
-        
-        if (id.length === 4) {
-            window.closeAllModals();
-            handleAddFriend(id); // 执行添加逻辑
-            input.value = '';
-        } else {
-            alert("ID 必须是4位数字！");
-        }
-    };
-
-    // 呼出扫码
-    document.getElementById('scan-btn').onclick = () => {
-        document.getElementById('qr-overlay').classList.remove('hidden');
-        setTimeout(startScanner, 300);
-    };
-
-    // 聊天相关
-    document.getElementById('chat-back-btn').onclick = () => {
-        document.getElementById('view-chat').classList.remove('active');
-        setTimeout(() => document.getElementById('view-chat').classList.add('right-sheet'), 300);
-        activeChatId = null;
-    };
-
-    document.getElementById('chat-send-btn').onclick = sendTextMsg;
+    // ========================================================
+    // 4. 业务逻辑 (Logic)
+    // ========================================================
     
-    // 模式切换
-    document.getElementById('mode-switch-btn').onclick = () => {
-        document.getElementById('input-mode-text').classList.toggle('hidden');
-        document.getElementById('input-mode-voice').classList.toggle('hidden');
-    };
-
-    // --- 4. 网络层 (Network) ---
-    // 异步启动，不阻塞 UI
-    let socket = null;
-    let activeChatId = null;
-
-    if (!SERVER_URL.includes('http')) {
-        alert("请在 app.js 中配置正确的 SERVER_URL");
-    } else {
-        console.log("Connecting to:", SERVER_URL);
-        socket = io(SERVER_URL, { 
-            reconnection: true,
-            transports: ['websocket'] // 强制 WebSocket，更稳定
-        });
-
-        const statusEl = document.getElementById('conn-status');
-
-        socket.on('connect', () => {
-            console.log("Socket Connected!");
-            statusEl.innerText = "ONLINE";
-            statusEl.className = "status-pill green";
-            socket.emit('register', MY_ID);
-        });
-
-        socket.on('disconnect', () => {
-            console.log("Socket Disconnected");
-            statusEl.innerText = "OFFLINE";
-            statusEl.className = "status-pill red";
-        });
-
-        socket.on('connect_error', (err) => {
-            console.log("Socket Error:", err);
-        });
-
-        socket.on('receive_msg', (msg) => {
-            handleIncomingMsg(msg);
-        });
-    }
-
-    // --- 5. 业务逻辑函数 ---
-
-    function handleAddFriend(id) {
-        // 乐观 UI：不管网络如何，先加到本地
-        if (!db.friends.find(f => f.id === id)) {
-            db.friends.push({ id: id, addedAt: Date.now(), alias: `Fren ${id}` });
+    function addFriend(id) {
+        if(!db.friends.find(f => f.id === id)) {
+            db.friends.push({ id: id, addedAt: Date.now() });
             saveDB();
             renderFriends();
         }
-        // 跳转聊天
-        openChat(id);
     }
 
     function renderFriends() {
         const list = document.getElementById('friends-list-container');
-        list.innerHTML = ''; // 清空
-        
+        list.innerHTML = '';
         db.friends.forEach(f => {
             const div = document.createElement('div');
             div.className = 'k-list-item';
             div.innerHTML = `
                 <div class="avatar-frame"><img src="https://api.dicebear.com/7.x/open-peeps/svg?seed=${f.id}" class="avatar-img"></div>
                 <div>
-                    <div style="font-weight:bold">${f.alias || f.id}</div>
+                    <div style="font-weight:bold">User ${f.id}</div>
                     <div style="font-size:12px; color:green">SAVED</div>
                 </div>
             `;
@@ -191,113 +140,119 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
+    let activeChatId = null;
     function openChat(id) {
         activeChatId = id;
-        const f = db.friends.find(x => x.id === id);
-        document.getElementById('chat-partner-name').innerText = f ? (f.alias || f.id) : id;
-        
+        document.getElementById('chat-partner-name').innerText = "User " + id;
         const chatView = document.getElementById('view-chat');
         chatView.classList.remove('right-sheet');
         chatView.classList.add('active');
         
         const container = document.getElementById('messages-container');
         container.innerHTML = '';
-        const history = db.history[id] || [];
-        history.forEach(msg => appendMsgDOM(msg, msg.isSelf));
+        const msgs = db.history[id] || [];
+        msgs.forEach(m => appendMsg(m.content, m.isSelf, m.type));
     }
 
-    function sendTextMsg() {
-        const input = document.getElementById('chat-input');
-        const txt = input.value.trim();
-        if(txt) {
-            sendData('text', txt);
-            input.value = '';
+    function sendText() {
+        const txt = document.getElementById('chat-input').value;
+        if(txt && activeChatId) {
+            // 网络发送
+            if(socket && socket.connected) {
+                socket.emit('message', { to: activeChatId, msg: txt, type: 'text' });
+            }
+            // 本地存储
+            saveMsg(activeChatId, txt, true, 'text');
+            appendMsg(txt, true, 'text');
+            document.getElementById('chat-input').value = '';
         }
     }
 
-    function sendData(type, content, fileName = null) {
-        if(!activeChatId) return;
-        
-        // 1. 存本地
-        const msgObj = { type, content, isSelf: true, ts: Date.now(), fileName };
-        if (!db.history[activeChatId]) db.history[activeChatId] = [];
-        db.history[activeChatId].push(msgObj);
+    function saveMsg(id, content, isSelf, type) {
+        if(!db.history[id]) db.history[id] = [];
+        db.history[id].push({ content, isSelf, type, ts: Date.now() });
         saveDB();
-        appendMsgDOM(msgObj, true);
-
-        // 2. 发网络 (如果通的话)
-        if(socket && socket.connected) {
-            socket.emit('send_private', { targetId: activeChatId, content, type, fileName });
-        } else {
-            console.warn("Network offline, msg saved locally.");
-        }
     }
 
-    function handleIncomingMsg(msg) {
-        const fid = msg.from;
-        // 如果是新朋友，自动添加
-        if (!db.friends.find(f => f.id === fid)) {
-            db.friends.push({ id: fid, addedAt: Date.now(), alias: `Fren ${fid}` });
-        }
-        
-        if (!db.history[fid]) db.history[fid] = [];
-        db.history[fid].push({ type: msg.type, content: msg.content, isSelf: false, ts: msg.timestamp, fileName: msg.fileName });
-        saveDB();
-        renderFriends();
-
-        if (activeChatId === fid) {
-            appendMsgDOM(msg, false);
-        } else {
-            document.getElementById('msg-sound').play().catch(()=>{});
-            if(navigator.vibrate) navigator.vibrate(200);
-        }
-    }
-
-    function appendMsgDOM(msg, isSelf) {
+    function appendMsg(content, isSelf, type) {
         const container = document.getElementById('messages-container');
         const div = document.createElement('div');
         div.className = `msg-row ${isSelf?'self':'other'}`;
-        let html = '';
-        
-        if (msg.type === 'text') html = `<div class="bubble">${msg.content}</div>`;
-        else if (msg.type === 'voice') html = `<div class="bubble" style="cursor:pointer; background:${isSelf?'#bdfcc9':'#fff'}" onclick="new Audio('${msg.content}').play()">🎤 Voice Clip ▶</div>`;
-        else if (msg.type === 'sticker') html = `<img src="${msg.content}" class="sticker-img">`;
-        
-        div.innerHTML = html;
+        if(type === 'text') div.innerHTML = `<div class="bubble">${content}</div>`;
+        else if(type === 'sticker') div.innerHTML = `<img src="${content}" class="sticker-img">`;
         container.appendChild(div);
         container.scrollTop = container.scrollHeight;
     }
 
-    // 扫码核心逻辑
+    // 扫码器
     function startScanner() {
-        if(!window.Html5Qrcode) return alert("Scanner lib missing");
-        
+        if(!window.Html5Qrcode) return alert("Scanner Lib Missing");
         const scanner = new Html5Qrcode("qr-reader");
         window.scanner = scanner;
-        
         scanner.start({facingMode:"environment"}, {fps:10, qrbox:200}, txt => {
-            // 扫码成功
             document.getElementById('success-sound').play().catch(()=>{});
-            if(navigator.vibrate) navigator.vibrate(200);
-            
-            scanner.stop().catch(()=>{});
-            window.closeAllModals();
-            
-            if(txt.length === 4) {
-                handleAddFriend(txt);
-                alert("FOUND: " + txt);
+            window.closeAll();
+            scanner.stop();
+            if(txt.length===4) {
+                addFriend(txt);
+                openChat(txt);
             }
-        }).catch(err => {
-            console.error(err);
-            alert("Camera Error: HTTPS required");
-            window.closeAllModals();
+        }).catch(e => {
+            console.log(e);
+            alert("Camera Error. Please use ADD ID manually.");
+            window.closeAll();
         });
     }
 
-    // 全局点击 (音频解锁)
-    document.body.addEventListener('click', () => {
-        document.getElementById('msg-sound').load();
-        document.getElementById('success-sound').load();
-    }, { once: true });
+    // 表情加载
+    const stickerGrid = document.querySelector('.sticker-grid');
+    for(let i=0; i<10; i++) {
+        const url = `https://api.dicebear.com/7.x/fun-emoji/svg?seed=${i*100}`;
+        const img = document.createElement('img');
+        img.src = url; img.className = 'sticker-item';
+        img.style.width = '60px';
+        img.onclick = () => {
+            if(activeChatId) {
+                saveMsg(activeChatId, url, true, 'sticker');
+                appendMsg(url, true, 'sticker');
+                document.getElementById('sticker-panel').classList.add('hidden');
+                // 发送网络
+                if(socket) socket.emit('message', { to: activeChatId, msg: url, type: 'sticker' });
+            }
+        };
+        stickerGrid.appendChild(img);
+    }
+
+
+    // ========================================================
+    // 5. 网络层 (最后加载，崩了也不怕)
+    // ========================================================
+    let socket = null;
+    try {
+        socket = io(SERVER_URL);
+        
+        socket.on('connect', () => {
+            document.getElementById('conn-status').innerText = "ONLINE";
+            document.getElementById('conn-status').className = "status-badge green";
+            socket.emit('register', MY_ID);
+        });
+
+        socket.on('disconnect', () => {
+            document.getElementById('conn-status').innerText = "OFFLINE";
+            document.getElementById('conn-status').className = "status-badge red";
+        });
+
+        socket.on('message', (data) => {
+            // 收到消息
+            document.getElementById('msg-sound').play().catch(()=>{});
+            saveMsg(data.from, data.msg, false, data.type);
+            addFriend(data.from); // 自动加好友
+            
+            if(activeChatId === data.from) {
+                appendMsg(data.msg, false, data.type);
+            }
+        });
+
+    } catch(e) { console.error("Socket Error", e); }
 
 });
