@@ -1,4 +1,4 @@
-const CACHE_NAME = 'wojak-v18-debugged';
+const CACHE_NAME = 'wojak-v19-stable';
 const FILES = [
     './', './index.html', './style.css', './app.js', './manifest.json',
     'https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js',
