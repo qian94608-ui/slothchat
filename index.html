@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-    <title>WojakNet Beta 0.7</title>
+    <title>WojakNet Beta 0.8</title>
     
     <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@600;800&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="style.css">
@@ -28,18 +28,18 @@
                 </div>
                 <div class="header-right">
                     <button id="fm-btn" class="icon-btn-round">📻</button>
-                    <div id="conn-status" class="status-dot red"></div>
+                    <div id="conn-status" class="status-dot red" onclick="forceReconnect()" title="Tap to Reconnect"></div>
                 </div>
             </header>
 
             <div class="scroll-content">
                 <div class="defi-card">
-                    <div class="card-label">YOUR ID (BETA 0.7)</div>
+                    <div class="card-label">YOUR ID</div>
                     <div class="card-row">
                         <div class="id-value" id="my-id-display">....</div>
                         <div id="qrcode" class="qr-mini"></div>
                     </div>
-                    <div class="card-footer">Secure P2P Protocol</div>
+                    <div class="card-footer">v0.8 Stable Core</div>
                 </div>
 
                 <div class="action-row">
@@ -89,7 +89,6 @@
                 
                 <div class="input-zone">
                     <button id="voice-record-btn" class="voice-btn-long">HOLD TO SPEAK</button>
-                    
                     <div id="text-input-wrapper" class="text-wrapper hidden">
                         <input type="text" id="chat-input" placeholder="Message..." autocomplete="off">
                         <button id="chat-send-btn" class="send-arrow">➤</button>
@@ -127,7 +126,7 @@
                             <div class="cc-label">ID_NO</div>
                         </div>
                     </div>
-                    <div class="cyber-footer">WOJAK NET // BETA 0.7</div>
+                    <div class="cyber-footer">WOJAK NET // BETA 0.8</div>
                 </div>
             </div>
         </div>
