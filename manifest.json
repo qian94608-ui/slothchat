@@ -1,12 +1,21 @@
 {
-  "name": "WojakNet",
-  "short_name": "WojakNet",
+  "name": "PepeChat",
+  "short_name": "PepeChat",
   "start_url": "./index.html",
   "display": "standalone",
-  "background_color": "#E6D3B3",
-  "theme_color": "#E6D3B3",
+  "background_color": "#56AB2F",
+  "theme_color": "#56AB2F",
   "orientation": "portrait",
   "icons": [
-    { "src": "https://upload.wikimedia.org/wikipedia/en/9/9a/Trollface_non-free.png", "sizes": "192x192", "type": "image/png" }
+    {
+      "src": "https://cdn-icons-png.flaticon.com/512/12310/12310702.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "https://cdn-icons-png.flaticon.com/512/12310/12310702.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
   ]
 }
