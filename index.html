@@ -5,13 +5,12 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-    <title>WojakNet v25</title>
+    <title>WojakNet v26</title>
     
     <link rel="stylesheet" href="style.css">
     <link rel="manifest" href="manifest.json">
-    <link rel="apple-touch-icon" href="https://upload.wikimedia.org/wikipedia/en/9/9a/Trollface_non-free.png">
     
-    <script src="https://cdn.socket.io/4.7.4/socket.io.min.js"></script>
+    <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
     <script src="https://unpkg.com/html5-qrcode" type="text/javascript"></script>
 </head>
@@ -20,13 +19,12 @@
     <div id="app-root">
         <div id="view-main" class="page active">
             <header class="meme-header">
-                <div class="header-brand">WojakNet <span style="color:red;font-size:10px;">v25</span></div>
-                <div id="conn-status" class="status-badge red">INIT...</div>
+                <button onclick="localStorage.clear();location.reload()" style="background:red; color:white; border:2px solid #000; font-weight:bold; font-size:10px;">⚠ RESET</button>
+                <div class="header-brand">WojakNet <span style="color:red;font-size:10px;">v26</span></div>
+                <div id="conn-status" class="status-badge red">INIT</div>
             </header>
 
-            <div id="screen-log" style="background:#000; color:#0f0; font-family:monospace; font-size:10px; height:80px; overflow-y:scroll; padding:5px; margin:5px; border:2px solid red;">
-                > System Start...<br>
-            </div>
+            <div id="screen-log" class="debug-console">> System Ready...</div>
 
             <div class="coin-balance-card">
                 <div class="coin-label">IDENTITY</div>
@@ -34,7 +32,7 @@
                     <div id="qrcode" class="qr-small"></div>
                     <div class="coin-info">
                         <div class="coin-value" id="my-id-display">....</div>
-                        <div class="coin-name" onclick="resetApp()" style="background:red; color:white; cursor:pointer;">⚠ FORCE RESET</div>
+                        <div class="coin-name" id="my-nickname">Anon</div>
                     </div>
                 </div>
             </div>
@@ -44,7 +42,17 @@
                 <button id="add-id-btn" class="pepe-btn blue">➕ ADD ID</button>
             </div>
 
-            <div id="friends-list-container" class="list-container"></div>
+            <div class="list-container">
+                <div class="list-title">MY FRENS</div>
+                <div class="k-list-item me-item">
+                    <div class="avatar-frame"><img id="my-avatar" class="avatar-img" src=""></div>
+                    <div>
+                        <div style="font-weight:bold">ME</div>
+                        <div style="font-size:12px; color:green">ONLINE</div>
+                    </div>
+                </div>
+                <div id="friends-list-container"></div>
+            </div>
 
             <nav class="pepe-nav">
                 <button class="nav-item active" onclick="switchTab('view-main')">HOME</button>
@@ -53,12 +61,17 @@
         </div>
 
         <div id="view-card" class="page right-sheet">
-            <header class="meme-header"><button class="back-btn" onclick="goBack()">⬅</button><span>ID CARD</span><div></div></header>
+            <header class="meme-header">
+                <button class="back-btn" onclick="goBack()">⬅</button>
+                <div class="header-brand">ID CARD</div>
+                <div style="width:30px"></div>
+            </header>
             <div class="cyber-card-wrapper">
                 <div class="cyber-card">
                     <div class="cyber-content">
                         <div class="qr-img"></div>
-                        <div class="id-glitch" id="card-id-text">0000</div>
+                        <div class="cc-mid"><img id="card-avatar" class="cc-avatar" src=""></div>
+                        <div class="cc-id"><div class="id-glitch" id="card-id-text">0000</div></div>
                     </div>
                 </div>
             </div>
@@ -70,22 +83,24 @@
                 <div class="chat-title" id="chat-partner-name">User</div>
                 <div class="status-dot"></div>
             </header>
+
             <div id="messages-container" class="messages-container"></div>
+
             <div class="chat-footer">
                 <button id="sticker-btn" class="tool-btn">🐸</button>
                 <div class="input-box-border"><input type="text" id="chat-input" placeholder="Type..." autocomplete="off"></div>
                 <button id="chat-send-btn" class="send-btn">➤</button>
             </div>
-            <div id="sticker-panel" class="sticker-panel hidden"><div class="sticker-grid" id="sticker-grid"></div></div>
+            <div id="sticker-panel" class="sticker-panel hidden"></div>
         </div>
     </div>
 
-    <div id="qr-overlay" class="modal-overlay hidden"><div class="modal-box"><div class="modal-header">SCAN <button class="close-x" onclick="closeAll()">X</button></div><div id="qr-reader"></div></div></div>
+    <div id="qr-overlay" class="modal-overlay hidden"><div class="modal-box scanner-box"><div class="modal-bar">SCAN <button class="close-x" onclick="closeAll()">X</button></div><div id="qr-reader"></div></div></div>
     
     <div id="add-overlay" class="modal-overlay hidden">
         <div class="modal-box">
-            <div class="modal-header">ADD <button class="close-x" onclick="closeAll()">X</button></div>
-            <div class="modal-body">
+            <div class="modal-bar">ADD ID <button class="close-x" onclick="closeAll()">X</button></div>
+            <div class="modal-content">
                 <input type="number" id="manual-id-input" class="big-input" placeholder="1234">
                 <button id="confirm-add-btn" class="pepe-btn green full">CONNECT</button>
             </div>
@@ -93,6 +108,8 @@
     </div>
 
     <audio id="msg-sound" src="https://www.myinstants.com/media/sounds/discord-notification.mp3"></audio>
+    <audio id="success-sound" src="https://www.myinstants.com/media/sounds/coin-collect-sound-effect_1.mp3"></audio>
+
     <script src="app.js"></script>
 </body>
 </html>
