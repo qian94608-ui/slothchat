@@ -1,12 +1,16 @@
 {
-  "name": "PepeNet",
-  "short_name": "PepeNet",
+  "name": "WojakNet Beta 0.7",
+  "short_name": "WojakNet",
   "start_url": "./index.html",
   "display": "standalone",
   "background_color": "#F0F5F2",
   "theme_color": "#59BC10",
   "orientation": "portrait",
   "icons": [
-    { "src": "https://upload.wikimedia.org/wikipedia/en/9/9a/Trollface_non-free.png", "sizes": "192x192", "type": "image/png" }
+    {
+      "src": "https://upload.wikimedia.org/wikipedia/en/9/9a/Trollface_non-free.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    }
   ]
 }
