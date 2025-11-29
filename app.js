@@ -1,16 +1,15 @@
 document.addEventListener('DOMContentLoaded', () => {
 
-    // --- 配置 ---
-    const PREFIX = 'wojak-v14-';
-    const DB_KEY = 'wojak_v14_id';
+    // --- 1. 配置与状态 ---
+    const PREFIX = 'wojak-v15-';
+    const DB_KEY = 'wojak_v15_db';
     
-    // TURN 服务器 (解决 4G 问题)
+    // TURN 服务器 (解决 4G)
     const PEER_CONFIG = {
         debug: 1,
         config: {
             iceServers: [
                 { urls: 'stun:stun.l.google.com:19302' },
-                // OpenRelay 免费 TURN (必须有这个才能穿透4G)
                 { urls: "turn:openrelay.metered.ca:80", username: "openrelayproject", credential: "openrelayproject" },
                 { urls: "turn:openrelay.metered.ca:443", username: "openrelayproject", credential: "openrelayproject" },
                 { urls: "turn:openrelay.metered.ca:443?transport=tcp", username: "openrelayproject", credential: "openrelayproject" }
@@ -19,331 +18,356 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     };
 
-    // --- 状态 ---
-    const App = {
-        peer: null,
-        conn: null,
-        id: localStorage.getItem(DB_KEY),
+    // 本地数据
+    let db = JSON.parse(localStorage.getItem(DB_KEY));
+    if (!db || !db.profile || db.profile.id.length !== 4) {
+        db = {
+            profile: { id: String(Math.floor(1000 + Math.random() * 9000)), avatarSeed: Math.random() },
+            friends: [], history: {}
+        };
+        localStorage.setItem(DB_KEY, JSON.stringify(db));
+    }
+    const saveDB = () => localStorage.setItem(DB_KEY, JSON.stringify(db));
+    
+    const MY_ID = db.profile.id;
+    
+    // UI 初始化
+    document.getElementById('my-id-display').innerText = MY_ID;
+    document.getElementById('card-id-text').innerText = MY_ID;
+    document.getElementById('my-avatar').src = `https://api.dicebear.com/7.x/bottts/svg?seed=${db.profile.avatarSeed}`;
+    if(window.QRCode) new QRCode(document.getElementById("qrcode"), { text: MY_ID, width: 120, height: 120 });
+
+    // --- 2. 状态变量 ---
+    let activeChatId = null;
+    let connections = {}; // { 4digitId: conn }
+    let peer = null;
+    
+    // 传输队列 (Mochi 逻辑)
+    const Transfer = {
         queue: [],
         isSending: false,
         chunkSize: 16 * 1024,
-        maxBuffer: 64 * 1024
+        maxBuffer: 64 * 1024,
+        rx: {} // 接收状态 { fileId: { buffer, received, meta } }
     };
 
-    // 如果没有ID，生成一个4位随机数
-    if (!App.id || App.id.length !== 4) {
-        App.id = String(Math.floor(1000 + Math.random() * 9000));
-        localStorage.setItem(DB_KEY, App.id);
-    }
-
-    const UI = {
-        myId: document.getElementById('my-id'),
-        status: document.getElementById('status-bar'),
-        cardConnect: document.getElementById('card-connect'),
-        cardTransfer: document.getElementById('card-transfer'),
-        list: document.getElementById('transfer-list'),
-        fab: document.getElementById('fab'),
-        chatModal: document.getElementById('chat-modal'),
-        chatMsgs: document.getElementById('chat-msgs'),
-        chatBadge: document.getElementById('chat-badge'),
-        dropZone: document.getElementById('drop-zone')
-    };
-
-    // --- 1. 初始化 ---
-    function init() {
-        // 使用带前缀的 ID
-        App.peer = new Peer(PREFIX + App.id, PEER_CONFIG);
+    // --- 3. 网络层 ---
+    try {
+        peer = new Peer(PREFIX + MY_ID, PEER_CONFIG);
         
-        App.peer.on('open', id => {
-            console.log('My Peer ID:', id);
-            UI.myId.innerText = App.id;
-            UI.status.innerText = "ONLINE - WAITING";
-            UI.status.classList.add('online');
-            new QRCode(document.getElementById("qrcode"), { text: App.id, width: 90, height: 90 });
+        peer.on('open', () => {
+            document.getElementById('my-status').innerText = "ONLINE";
+            document.getElementById('my-status').className = "status-badge green";
+            reconnectAll();
         });
 
-        App.peer.on('connection', conn => {
-            handleConnection(conn);
-        });
-
-        App.peer.on('error', err => {
+        peer.on('connection', conn => handleConnection(conn));
+        
+        peer.on('error', err => {
             console.log(err);
-            if(err.type === 'peer-unavailable') showToast("User Offline or ID Wrong");
-            else if(err.type === 'disconnected') {
-                UI.status.innerText = "DISCONNECTED";
-                UI.status.classList.remove('online');
-                setTimeout(() => App.peer.reconnect(), 2000);
-            }
+            if(err.type === 'disconnected') setTimeout(()=>peer.reconnect(), 2000);
         });
-    }
-    init();
+    } catch(e){}
 
-    // --- 2. 连接逻辑 ---
-    window.manualConnect = () => {
-        const inputId = document.getElementById('target-id').value.trim();
-        if(inputId.length !== 4) return showToast("Need 4 Digit ID");
-        
-        showToast("Connecting...");
-        const conn = App.peer.connect(PREFIX + inputId, { reliable: true });
+    function connectTo(id) {
+        if(id === MY_ID || (connections[id] && connections[id].open)) return;
+        console.log("Dialing", id);
+        const conn = peer.connect(PREFIX + id, { reliable: true });
         handleConnection(conn);
-    };
+    }
 
     function handleConnection(conn) {
-        // 任何一方连接成功，都视为建立通道
-        App.conn = conn;
-        const remoteShortId = conn.peer.replace(PREFIX, '');
-
+        const remoteId = conn.peer.replace(PREFIX, '');
+        
         conn.on('open', () => {
-            showToast("CONNECTED!");
-            UI.status.innerText = "LINKED WITH " + remoteShortId;
-            
-            // 切换界面
-            UI.cardConnect.style.display = 'none';
-            UI.cardTransfer.style.display = 'block';
-            UI.fab.style.display = 'flex';
-            
-            // 发送一条握手消息（可选）
-            conn.send({ type: 'sys', text: 'Handshake OK' });
+            connections[remoteId] = conn;
+            addFriendLocal(remoteId);
+            renderFriends();
+            updateChatStatus(remoteId);
+            // 握手
+            conn.send({ type: 'handshake' });
         });
+
+        conn.on('data', data => onDataReceived(remoteId, data)); // 核心数据处理
 
         conn.on('close', () => {
-            showToast("DISCONNECTED");
-            setTimeout(() => location.reload(), 1000);
+            delete connections[remoteId];
+            renderFriends();
+            updateChatStatus(remoteId);
         });
-
-        conn.on('data', data => onDataReceived(data));
-        
-        conn.on('error', err => console.log("Conn Error", err));
     }
 
-    // --- 3. 传输引擎 (来自 MochiDrop) ---
-    let rxState = { buffer: [], received: 0, meta: null, id: null, start: 0, lastUpdate: 0 };
+    function reconnectAll() {
+        db.friends.forEach(f => {
+            if(!connections[f.id] || !connections[f.id].open) connectTo(f.id);
+        });
+    }
+    setInterval(reconnectAll, 5000); // 5秒心跳重连
 
-    function onDataReceived(data) {
+    // --- 4. 核心：数据接收逻辑 (Mochi 移植) ---
+    function onDataReceived(senderId, data) {
         // A. 文件块
         if (data instanceof Uint8Array || data instanceof ArrayBuffer) {
-            if (!rxState.meta) return;
+            // 需要配合当前的接收状态
+            // 简化版：这里假设一次只传一个文件，或者通过 data channel 顺序保证
+            // 为了稳健，我们查找当前正在接收的任务
+            const rxId = Object.keys(Transfer.rx)[0]; // 简单取第一个
+            if (!rxId) return;
+            
+            const state = Transfer.rx[rxId];
             const chunk = new Uint8Array(data);
-            rxState.buffer.push(chunk);
-            rxState.received += chunk.byteLength;
+            state.buffer.push(chunk);
+            state.received += chunk.byteLength;
+            
+            // 更新进度 UI
+            updateProgress(rxId, state.received, state.meta.size);
 
-            const now = Date.now();
-            if (now - rxState.lastUpdate > 200 || rxState.received === rxState.meta.size) {
-                updateProgress(rxState.id, rxState.received, rxState.meta.size, rxState.start);
-                rxState.lastUpdate = now;
+            // 接收完成
+            if (state.received >= state.meta.size) {
+                const blob = new Blob(state.buffer, { type: state.meta.mime });
+                const url = URL.createObjectURL(blob);
+                finishTransfer(rxId, url, state.meta.name, state.meta.mime);
+                delete Transfer.rx[rxId];
             }
         }
-        // B. 信令
+        // B. 信令 JSON
         else if (data.type) {
-            if (data.type === 'header') {
-                rxState.buffer = []; rxState.received = 0; rxState.meta = data; 
-                rxState.id = data.id; rxState.start = Date.now();
-                createTransferItem(data.id, data.name, 'receiving', data.mode);
-                App.conn.send({ type: 'ack', id: data.id }); // ACK
+            if (data.type === 'handshake') {
+                addFriendLocal(senderId); renderFriends();
             }
+            else if (data.type === 'text') {
+                appendMsgDOM(data.content, false, 'text', senderId);
+            }
+            else if (data.type === 'sticker') {
+                appendMsgDOM(data.url, false, 'sticker', senderId);
+            }
+            // Mochi 逻辑：文件头
+            else if (data.type === 'header') {
+                const fid = data.id;
+                Transfer.rx[fid] = { buffer: [], received: 0, meta: data };
+                appendMsgDOM({name: data.name, size: data.size, id: fid}, false, 'file_start', senderId);
+                // 回复 ACK
+                connections[senderId].send({ type: 'ack', id: fid });
+            }
+            // Mochi 逻辑：ACK
             else if (data.type === 'ack') {
-                if (App.pendingAckResolve) { App.pendingAckResolve(); App.pendingAckResolve = null; }
-            }
-            else if (data.type === 'end') {
-                const blob = new Blob(rxState.buffer, { type: rxState.meta.mime });
-                const url = URL.createObjectURL(blob);
-                finishTransferItem(rxState.id, url, rxState.meta.name, rxState.meta.mime, 'in', rxState.meta.mode);
-                rxState.buffer = []; rxState.meta = null;
-            }
-            else if (data.type === 'chat') {
-                appendChatMsg(data.text, 'friend');
-                if (!UI.chatModal.classList.contains('active')) {
-                    UI.chatBadge.style.display = 'block';
-                    showToast("New Message");
-                    document.getElementById('msg-sound').play().catch(()=>{});
-                }
+                if (Transfer.pendingAckResolve) { Transfer.pendingAckResolve(); Transfer.pendingAckResolve = null; }
             }
         }
     }
 
-    // --- 发送队列 ---
-    window.enqueueFiles = (files, mode) => {
-        for (let f of files) {
-            const id = Date.now() + Math.random().toString(16).slice(2);
-            createTransferItem(id, f.name, 'sending', mode);
-            App.queue.push({ file: f, id: id, mode: mode });
-        }
+    // --- 5. 核心：发送逻辑 (Mochi 移植) ---
+    window.enqueueFile = (file) => {
+        if(!activeChatId || !connections[activeChatId]) return alert("Offline");
+        const id = Date.now() + Math.random().toString(16).slice(2);
+        // 本地显示气泡
+        appendMsgDOM({name: file.name, size: file.size, id: id}, true, 'file_start', activeChatId);
+        
+        Transfer.queue.push({ file: file, id: id, targetId: activeChatId });
         processQueue();
     };
 
     async function processQueue() {
-        if (App.isSending || App.queue.length === 0) return;
-        App.isSending = true;
-        const job = App.queue.shift();
+        if (Transfer.isSending || Transfer.queue.length === 0) return;
+        Transfer.isSending = true;
+        const job = Transfer.queue.shift();
+        const conn = connections[job.targetId];
 
-        // 1. Header
-        App.conn.send({ 
-            type: 'header', name: job.file.name, size: job.file.size, 
-            mime: job.file.type, id: job.id, mode: job.mode 
-        });
+        if(!conn || !conn.open) {
+            alert("Connection lost");
+            Transfer.isSending = false; return;
+        }
 
-        // 2. Wait ACK
+        // 1. 发送 Header
+        conn.send({ type: 'header', name: job.file.name, size: job.file.size, mime: job.file.type, id: job.id });
+
+        // 2. 等待 ACK
         try {
             await new Promise((resolve, reject) => {
-                App.pendingAckResolve = resolve;
+                Transfer.pendingAckResolve = resolve;
                 setTimeout(() => reject("Timeout"), 5000);
             });
-        } catch (e) {
-            showToast("Transfer Timeout");
-            App.isSending = false; processQueue(); return;
+        } catch(e) {
+            console.log("Ack Timeout");
+            Transfer.isSending = false; processQueue(); return;
         }
 
-        // 3. Chunks
+        // 3. 发送 Chunks
         let offset = 0;
-        const start = Date.now();
-        let lastUpdate = 0;
         while (offset < job.file.size) {
-            if (App.conn.dataChannel.bufferedAmount > App.maxBuffer) {
+            if (conn.dataChannel.bufferedAmount > Transfer.maxBuffer) {
                 await new Promise(r => setTimeout(r, 20)); continue;
             }
-            const chunk = job.file.slice(offset, offset + App.chunkSize);
+            const chunk = job.file.slice(offset, offset + Transfer.chunkSize);
             const buffer = await chunk.arrayBuffer();
-            App.conn.send(new Uint8Array(buffer));
-            offset += App.chunkSize;
+            conn.send(new Uint8Array(buffer));
+            offset += Transfer.chunkSize;
             
-            const now = Date.now();
-            if (now - lastUpdate > 200 || offset >= job.file.size) {
-                updateProgress(job.id, offset, job.file.size, start);
-                lastUpdate = now;
-            }
+            // 更新本地进度
+            updateProgress(job.id, offset, job.file.size);
         }
 
-        // 4. End
-        App.conn.send({ type: 'end' });
+        // 4. 完成
         const url = URL.createObjectURL(job.file);
-        finishTransferItem(job.id, url, job.file.name, job.file.type, 'out', job.mode);
+        finishTransfer(job.id, url, job.file.name, job.file.type);
         
-        App.isSending = false;
+        Transfer.isSending = false;
         processQueue();
     }
 
-    // --- UI 渲染 ---
-    function createTransferItem(id, name, type, mode) {
-        if (mode === 'main') {
-            const li = document.createElement('li');
-            li.className = 'transfer-item'; li.id = `item-${id}`;
-            li.innerHTML = `
-                <div style="font-size:1.5rem">${type==='sending'?'📤':'📥'}</div>
-                <div class="t-info">
-                    <div class="t-name">${name}</div>
-                    <div class="t-meta"><span class="state">0%</span></div>
-                    <div class="t-bar"><div class="t-fill" style="width:0%"></div></div>
-                </div>
-                <div class="actions"></div>`;
-            UI.list.prepend(li);
-        } else {
-            const div = document.createElement('div');
-            div.className = `msg ${type === 'sending' ? 'self' : 'friend'}`;
-            div.id = `bubble-${id}`;
-            div.innerHTML = `<div>📄 ${name}</div><div class="t-bar"><div class="t-fill" style="width:0%"></div></div>`;
-            UI.chatMsgs.appendChild(div);
-            UI.chatMsgs.scrollTop = UI.chatMsgs.scrollHeight;
-        }
+    // --- 6. UI 辅助函数 ---
+    function updateProgress(id, current, total) {
+        const bar = document.getElementById(`prog-${id}`);
+        if(bar) bar.style.width = Math.floor((current/total)*100) + '%';
     }
 
-    function updateProgress(id, loaded, total, startTime) {
-        const pct = Math.floor((loaded / total) * 100);
-        // 更新主列表
-        const mainItem = document.getElementById(`item-${id}`);
-        if (mainItem) {
-            mainItem.querySelector('.t-fill').style.width = pct + "%";
-            mainItem.querySelector('.state').innerText = pct + "%";
-        }
-        // 更新聊天
-        const bubble = document.getElementById(`bubble-${id}`);
-        if (bubble) bubble.querySelector('.t-fill').style.width = pct + "%";
-    }
-
-    function finishTransferItem(id, url, name, mime, dir, mode) {
-        const isImg = mime.startsWith('image/');
-        const mainItem = document.getElementById(`item-${id}`);
+    function finishTransfer(id, url, name, mime) {
+        const container = document.getElementById(`file-content-${id}`);
+        if(!container) return;
         
-        // 主列表完成态
-        if (mainItem) {
-            mainItem.querySelector('.t-bar').style.display = 'none';
-            mainItem.querySelector('.state').innerText = "DONE";
-            if (dir === 'in') {
-                const a = document.createElement('a'); a.href = url; a.download = name; a.innerText = "📥";
-                a.style.fontSize="1.5rem"; a.style.textDecoration="none";
-                mainItem.querySelector('.actions').appendChild(a);
-            }
+        if (mime.startsWith('image/')) {
+            container.innerHTML = `<img src="${url}" class="img-preview" onclick="window.open('${url}')">`;
+        } else {
+            container.innerHTML = `<a href="${url}" download="${name}" style="color:blue; font-weight:bold; display:block; margin-top:5px;">📥 DOWNLOAD</a>`;
         }
+        updateProgress(id, 1, 1); // 满条
+    }
 
-        // 聊天完成态
-        const bubble = document.getElementById(`bubble-${id}`);
-        if (bubble) {
-            if (isImg) {
-                bubble.innerHTML = `<img src="${url}" style="max-width:200px; border:2px solid #000; cursor:zoom-in;" onclick="document.getElementById('lb-img').src='${url}';document.getElementById('lightbox').style.display='flex'">`;
-            } else {
-                if(dir === 'in') bubble.innerHTML = `<a href="${url}" download="${name}" style="color:blue; font-weight:bold;">📥 DOWNLOAD: ${name}</a>`;
-                else bubble.innerHTML = `✅ SENT: ${name}`;
-            }
-            UI.chatMsgs.scrollTop = UI.chatMsgs.scrollHeight;
+    function appendMsgDOM(content, isSelf, type, chatId) {
+        // 如果不是当前聊天对象，就不显示（实际应用应该有未读消息逻辑）
+        if (activeChatId !== chatId) return;
+
+        const container = document.getElementById('messages-container');
+        const div = document.createElement('div');
+        div.className = `msg-row ${isSelf?'self':'other'}`;
+        
+        if (type === 'text') {
+            div.innerHTML = `<div class="bubble">${content}</div>`;
+        } else if (type === 'sticker') {
+            div.innerHTML = `<img src="${content}" class="sticker-img">`;
+        } else if (type === 'file_start') {
+            // content 是对象 {name, size, id}
+            div.innerHTML = `
+                <div class="bubble file-card">
+                    <div>📄 ${content.name}</div>
+                    <div class="progress-bar-container"><div class="progress-fill" id="prog-${content.id}"></div></div>
+                    <div id="file-content-${content.id}"></div>
+                </div>
+            `;
+        }
+        
+        container.appendChild(div);
+        container.scrollTop = container.scrollHeight;
+    }
+
+    // --- 7. 常规 UI 逻辑 ---
+    function addFriendLocal(id) {
+        if(!id || id.length!==4) return;
+        if(!db.friends.find(f => f.id === id)) {
+            db.friends.push({ id: id, addedAt: Date.now() });
+            saveDB();
         }
     }
 
-    // --- 交互 ---
-    window.showToast = (msg) => {
-        const t = document.getElementById('toast');
-        t.innerText = msg; t.style.display = 'block';
-        setTimeout(()=>t.style.display='none', 3000);
-    }
-
-    // 扫码
-    window.startScan = () => {
-        document.getElementById('scanner-layer').style.display = 'flex';
-        const scanner = new Html5Qrcode("reader");
-        window.scanner = scanner;
-        scanner.start({facingMode:"environment"}, {fps:10, qrbox:250}, (txt) => {
-            document.getElementById('target-id').value = txt;
-            window.stopScan();
-            window.manualConnect();
+    function renderFriends() {
+        const list = document.getElementById('friends-list-container');
+        list.innerHTML = '';
+        db.friends.forEach(f => {
+            const isOnline = connections[f.id] && connections[f.id].open;
+            const div = document.createElement('div');
+            div.className = 'k-list-item';
+            div.innerHTML = `
+                <div class="avatar-frame"><img src="https://api.dicebear.com/7.x/bottts/svg?seed=${f.id}" class="avatar-img"></div>
+                <div><div style="font-weight:bold">${f.id}</div><div style="font-size:12px; color:${isOnline?'green':'red'}">${isOnline?'ONLINE':'OFFLINE'}</div></div>
+            `;
+            div.onclick = () => openChat(f.id);
+            list.appendChild(div);
         });
     }
-    window.stopScan = () => {
-        if(window.scanner) window.scanner.stop();
-        document.getElementById('scanner-layer').style.display = 'none';
+
+    function openChat(id) {
+        activeChatId = id;
+        document.getElementById('chat-partner-name').innerText = id;
+        document.getElementById('view-chat').classList.add('active');
+        document.getElementById('view-chat').classList.remove('right-sheet');
+        document.getElementById('messages-container').innerHTML = ''; // Demo: 清空
+        updateChatStatus(id);
     }
 
-    // 聊天
-    window.openChat = () => { UI.chatModal.classList.add('active'); UI.chatBadge.style.display='none'; }
-    window.closeChat = () => { UI.chatModal.classList.remove('active'); }
-    
-    window.sendText = () => {
-        const input = document.getElementById('chat-input');
-        const txt = input.value.trim();
-        if(!txt || !App.conn) return;
-        App.conn.send({ type: 'chat', text: txt });
-        appendChatMsg(txt, 'self');
-        input.value = "";
-    }
-    
-    function appendChatMsg(txt, who) {
-        const div = document.createElement('div');
-        div.className = `msg ${who}`; div.innerText = txt;
-        UI.chatMsgs.appendChild(div);
-        UI.chatMsgs.scrollTop = UI.chatMsgs.scrollHeight;
+    function updateChatStatus(id) {
+        if(activeChatId !== id) return;
+        const isOnline = connections[id] && connections[id].open;
+        document.getElementById('chat-status-dot').className = isOnline ? 'status-square online' : 'status-square';
     }
 
-    // 文件选择
-    document.getElementById('file-input').onchange = (e) => enqueueFiles(e.target.files, 'main');
-    document.getElementById('chat-file-input').onchange = (e) => enqueueFiles(e.target.files, 'chat');
-    UI.dropZone.onclick = () => document.getElementById('file-input').click();
+    // 事件绑定
+    document.getElementById('chat-back-btn').onclick = () => {
+        document.getElementById('view-chat').classList.remove('active');
+        setTimeout(() => document.getElementById('view-chat').classList.add('right-sheet'), 300);
+        activeChatId = null;
+    };
 
-    // 表情
-    const emojis = ["🤡","🐸","💀","😡","😭","🙏"];
-    emojis.forEach(e => {
-        const div = document.createElement('div'); div.className='emoji'; div.innerText=e;
-        div.onclick = () => { document.getElementById('chat-input').value += e; };
-        document.getElementById('emoji-panel').appendChild(div);
+    document.getElementById('chat-send-btn').onclick = () => {
+        const val = document.getElementById('chat-input').value;
+        if(val && activeChatId && connections[activeChatId]) {
+            connections[activeChatId].send({type:'text', content:val});
+            appendMsgDOM(val, true, 'text', activeChatId);
+            document.getElementById('chat-input').value = '';
+        }
+    };
+
+    document.getElementById('chat-file-input').onchange = (e) => {
+        if(e.target.files.length > 0) window.enqueueFile(e.target.files[0]);
+    };
+
+    // 模态框
+    window.hideAllModals = () => {
+        document.querySelectorAll('.modal-overlay').forEach(e => e.classList.add('hidden'));
+        if(window.scannerObj) window.scannerObj.stop().catch(()=>{});
+    };
+    document.getElementById('scan-btn').onclick = () => {
+        document.getElementById('qr-overlay').classList.remove('hidden');
+        setTimeout(() => {
+            const scanner = new Html5Qrcode("qr-reader");
+            window.scannerObj = scanner;
+            scanner.start({facingMode:"environment"}, {fps:10, qrbox:200}, txt => {
+                hideAllModals(); document.getElementById('scan-sound').play().catch(()=>{});
+                if(txt.length===4) { addFriendLocal(txt); connectTo(txt); openChat(txt); }
+            });
+        }, 300);
+    };
+    document.getElementById('add-id-btn').onclick = () => document.getElementById('add-overlay').classList.remove('hidden');
+    document.getElementById('confirm-add-btn').onclick = () => {
+        const id = document.getElementById('manual-id-input').value;
+        if(id.length===4) { hideAllModals(); addFriendLocal(id); connectTo(id); openChat(id); }
+    };
+
+    // Nav
+    document.querySelectorAll('.nav-btn').forEach(btn => {
+        btn.onclick = () => {
+            document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
+            document.querySelectorAll('.tab-content').forEach(c => c.classList.add('hidden'));
+            btn.classList.add('active');
+            document.getElementById(btn.dataset.target).classList.remove('hidden');
+        }
     });
-    window.toggleEmoji = () => {
-        const p = document.getElementById('emoji-panel');
-        p.style.display = p.style.display==='grid'?'none':'grid';
-    }
+
+    // Stickers
+    const sGrid = document.getElementById('sticker-grid');
+    ['crying','angry','happy','clown'].forEach(s => {
+        const url = `https://api.dicebear.com/7.x/fun-emoji/svg?seed=${s}`;
+        const img = document.createElement('img'); img.src=url; img.className='sticker-img'; img.style.width='60px';
+        img.onclick = () => {
+            if(activeChatId && connections[activeChatId]) {
+                connections[activeChatId].send({type:'sticker', url:url});
+                appendMsgDOM(url, true, 'sticker', activeChatId);
+                document.getElementById('sticker-panel').classList.add('hidden');
+            }
+        }
+        sGrid.appendChild(img);
+    });
+    document.getElementById('sticker-btn').onclick = () => document.getElementById('sticker-panel').classList.toggle('hidden');
+
+    renderFriends();
+    document.body.onclick = () => document.getElementById('msg-sound').load();
 });
