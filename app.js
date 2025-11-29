@@ -3,14 +3,37 @@ document.addEventListener('DOMContentLoaded', () => {
     // ★★★ 请填入你的 Render 地址 ★★★
     const SERVER_URL = 'https://wojak-backend.onrender.com'; 
 
-    // --- 1. 数据与状态 ---
-    const DB_KEY = 'pepe_v27_db';
+    // --- 1. 全局工具函数 (必须先定义) ---
+    window.closeAll = () => {
+        document.querySelectorAll('.modal-overlay').forEach(e => e.classList.add('hidden'));
+        if(window.scanner) window.scanner.stop().catch(()=>{});
+    };
+
+    window.switchTab = (id) => {
+        document.querySelectorAll('.page').forEach(p => {
+            if(p.id === id) { p.classList.add('active'); p.classList.remove('right-sheet'); }
+            else if(p.id !== 'view-main') p.classList.remove('active');
+        });
+    };
+
+    window.goBack = () => {
+        document.getElementById('view-chat').classList.remove('active');
+        setTimeout(()=>document.getElementById('view-chat').classList.add('right-sheet'), 300);
+        document.getElementById('view-card').classList.remove('active');
+        setTimeout(()=>document.getElementById('view-card').classList.add('right-sheet'), 300);
+        activeChatId = null;
+    };
+
+    window.resetApp = () => { if(confirm("Reset?")) { localStorage.clear(); location.reload(); } };
+
+    // --- 2. 数据层 ---
+    const DB_KEY = 'pepe_v28_db';
     let db;
     try {
         db = JSON.parse(localStorage.getItem(DB_KEY));
-        if (!db || !db.profile) throw new Error("Init");
+        if(!db || !db.profile) throw new Error("Init");
     } catch(e) {
-        db = {
+        db = { 
             profile: { id: String(Math.floor(1000 + Math.random() * 9000)), avatarSeed: Math.random(), nickname: 'Anon' },
             friends: [], history: {}
         };
@@ -21,325 +44,192 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // UI Init
     document.getElementById('my-id-display').innerText = MY_ID;
+    document.getElementById('card-id-text').innerText = MY_ID;
     document.getElementById('my-nickname').innerText = db.profile.nickname;
-    document.getElementById('my-avatar').src = `https://api.dicebear.com/7.x/avataaars/svg?seed=${db.profile.avatarSeed}`;
+    document.getElementById('my-avatar').src = `https://api.dicebear.com/7.x/open-peeps/svg?seed=${db.profile.avatarSeed}`;
     
     if(window.QRCode) {
-        new QRCode(document.getElementById("qrcode"), { text: MY_ID, width: 60, height: 60, colorDark: "#59BC10", colorLight: "#FFFFFF" });
+        document.getElementById("qrcode").innerHTML = "";
+        new QRCode(document.getElementById("qrcode"), { text: MY_ID, width: 50, height: 50 });
+        document.querySelector(".qr-img").innerHTML = "";
+        new QRCode(document.querySelector(".qr-img"), { text: MY_ID, width: 80, height: 80 });
     }
 
-    // --- 2. Socket 连接 ---
-    let socket = null;
-    let activeChatId = null;
+    renderFriends();
 
-    if (!SERVER_URL.includes('onrender')) alert("Error: Set SERVER_URL in app.js");
+    // --- 3. 业务逻辑 (修复点) ---
 
-    socket = io(SERVER_URL, { reconnection: true });
+    // A. 扫码 (强行跳转)
+    document.getElementById('scan-btn').onclick = () => {
+        document.getElementById('qr-overlay').classList.remove('hidden');
+        setTimeout(() => {
+            if(!window.Html5Qrcode) return alert("Scanner Error");
+            const scanner = new Html5Qrcode("qr-reader");
+            window.scanner = scanner;
+            scanner.start({facingMode:"environment"}, {fps:10, qrbox:200}, txt => {
+                // 成功
+                scanner.stop().catch(()=>{});
+                window.closeAll();
+                document.getElementById('success-sound').play().catch(()=>{});
+                if(navigator.vibrate) navigator.vibrate(200);
 
-    socket.on('connect', () => {
-        document.getElementById('conn-status').className = "status-dot green";
-        socket.emit('register', MY_ID);
-    });
-
-    socket.on('disconnect', () => {
-        document.getElementById('conn-status').className = "status-dot red";
-    });
-
-    socket.on('receive_msg', (msg) => {
-        const fid = msg.from;
-        if (!db.friends.find(f => f.id === fid)) db.friends.push({ id: fid, addedAt: Date.now(), alias: `User ${fid}` });
-        if (!db.history[fid]) db.history[fid] = [];
-        db.history[fid].push({ type: msg.type, content: msg.content, isSelf: false, ts: msg.timestamp, fileName: msg.fileName });
-        saveDB();
-        renderFriends();
-
-        if (activeChatId === fid) {
-            appendMsgDOM(msg, false);
-        } else {
-            // 语音播报
-            speakNotification("New message");
-            // 震动
-            if(navigator.vibrate) navigator.vibrate([100, 50, 100]);
-        }
-    });
-
-    function speakNotification(text) {
-        if('speechSynthesis' in window) {
-            const utter = new SpeechSynthesisUtterance(text);
-            const voices = window.speechSynthesis.getVoices();
-            const female = voices.find(v => v.name.includes('Female'));
-            if(female) utter.voice = female;
-            utter.rate = 0.9;
-            window.speechSynthesis.speak(utter);
-        } else {
-            document.getElementById('msg-sound').play().catch(()=>{});
-        }
-    }
-
-    // --- 3. 核心功能实现 ---
-
-    // A. 渲染列表 + 左滑删除 (Swipe Logic)
-    function renderFriends() {
-        const list = document.getElementById('friends-list-container');
-        list.innerHTML = '';
-        
-        db.friends.forEach(f => {
-            const wrapper = document.createElement('div');
-            wrapper.className = 'list-item-wrapper';
-            
-            // 底层删除按钮
-            const bg = document.createElement('div');
-            bg.className = 'delete-bg';
-            bg.innerHTML = '🗑 DELETE';
-            
-            // 表层内容
-            const content = document.createElement('div');
-            content.className = 'k-list-item';
-            const name = f.alias || f.id;
-            content.innerHTML = `
-                <div class="avatar-frame"><img src="https://api.dicebear.com/7.x/avataaars/svg?seed=${f.id}" class="avatar-img"></div>
-                <div style="flex:1;">
-                    <div style="font-weight:bold; font-size:16px;">${name}</div>
-                    <div class="status-text on">Connected</div>
-                </div>
-                <div style="font-size:20px; color:#ddd;">›</div>
-            `;
-
-            // 手势逻辑
-            let startX, currentX;
-            content.addEventListener('touchstart', e => { startX = e.touches[0].clientX; content.style.transition = 'none'; });
-            content.addEventListener('touchmove', e => {
-                let diff = e.touches[0].clientX - startX;
-                if(diff < 0 && diff > -100) content.style.transform = `translateX(${diff}px)`;
-            });
-            content.addEventListener('touchend', e => {
-                content.style.transition = 'transform 0.2s';
-                let diff = e.changedTouches[0].clientX - startX;
-                if(diff < -50) content.style.transform = `translateX(-80px)`; // 展开
-                else content.style.transform = `translateX(0px)`; // 回弹
-            });
-
-            // 点击逻辑
-            content.onclick = (e) => {
-                if(content.style.transform === 'translateX(-80px)') {
-                    content.style.transform = 'translateX(0px)'; // 收起
-                } else {
-                    openChat(f.id);
-                }
-            };
-
-            // 删除点击
-            bg.onclick = (e) => {
-                e.stopPropagation();
-                if(confirm(`Delete ${name}?`)) {
-                    db.friends = db.friends.filter(x => x.id !== f.id);
-                    saveDB();
-                    renderFriends();
-                }
-            };
-
-            wrapper.appendChild(bg);
-            wrapper.appendChild(content);
-            list.appendChild(wrapper);
-        });
-    }
-
-    // B. 文件拖拽发送 (Drag & Drop)
-    const dragOverlay = document.getElementById('drag-overlay');
-    // 全局监听
-    window.addEventListener('dragenter', (e) => {
-        if(document.getElementById('view-chat').classList.contains('active')) {
-            dragOverlay.classList.remove('hidden');
-            dragOverlay.classList.add('active');
-        }
-    });
-    dragOverlay.addEventListener('dragleave', (e) => {
-        if(e.target === dragOverlay) {
-            dragOverlay.classList.add('hidden');
-            dragOverlay.classList.remove('active');
-        }
-    });
-    window.addEventListener('dragover', e => e.preventDefault());
-    window.addEventListener('drop', e => {
-        e.preventDefault();
-        dragOverlay.classList.add('hidden');
-        dragOverlay.classList.remove('active');
-        if(activeChatId && e.dataTransfer.files[0]) {
-            processFile(e.dataTransfer.files[0]);
-        }
-    });
-
-    function processFile(file) {
-        if(file.size > 2 * 1024 * 1024) return alert("Max File Size: 2MB");
-        const reader = new FileReader();
-        reader.readAsDataURL(file);
-        reader.onload = () => {
-            const type = file.type.startsWith('image/') ? 'image' : 'file';
-            sendData(type, reader.result, file.name);
-        };
-    }
-
-    // C. 语音/文本切换
-    const modeSwitch = document.getElementById('mode-switch-btn');
-    let isVoice = true;
-    modeSwitch.onclick = () => {
-        isVoice = !isVoice;
-        if(isVoice) {
-            document.getElementById('input-mode-text').classList.add('hidden');
-            document.getElementById('input-mode-voice').classList.remove('hidden');
-            modeSwitch.innerText = "⌨️";
-        } else {
-            document.getElementById('input-mode-voice').classList.add('hidden');
-            document.getElementById('input-mode-text').classList.remove('hidden');
-            modeSwitch.innerText = "🎤";
-        }
+                if(txt.length === 4) {
+                    handleAddFriend(txt); // 核心：加好友并跳转
+                } else { alert("Invalid Code"); }
+            }).catch(e => { console.log(e); });
+        }, 500);
     };
 
-    // D. 备注修改
+    // B. 手动添加 (强行跳转)
+    document.getElementById('add-id-btn').onclick = () => document.getElementById('add-overlay').classList.remove('hidden');
+    document.getElementById('confirm-add-btn').onclick = () => {
+        const id = document.getElementById('manual-id-input').value;
+        if(id.length === 4) {
+            window.closeAll();
+            handleAddFriend(id);
+            document.getElementById('manual-id-input').value = '';
+        } else { alert("Must be 4 digits"); }
+    };
+
+    function handleAddFriend(id) {
+        // 先加本地，不等网络
+        if(!db.friends.find(f => f.id === id)) {
+            db.friends.push({ id: id, addedAt: Date.now(), alias: `User ${id}` });
+            saveDB();
+            renderFriends();
+        }
+        // 直接打开
+        openChat(id);
+    }
+
+    // C. 修改昵称 (修复)
     window.editMyName = () => {
-        const n = prompt("New Nickname:", db.profile.nickname);
+        const n = prompt("New Name:", db.profile.nickname);
         if(n) { db.profile.nickname = n; saveDB(); document.getElementById('my-nickname').innerText = n; }
     };
     window.editFriendName = () => {
         if(!activeChatId) return;
         const f = db.friends.find(x => x.id === activeChatId);
-        const n = prompt("Rename Fren:", f.alias || f.id);
-        if(n) { f.alias = n; saveDB(); document.getElementById('chat-partner-name').innerText = n; renderFriends(); }
+        const n = prompt("Rename Friend:", f.alias || f.id);
+        if(n) { 
+            f.alias = n; 
+            saveDB(); 
+            document.getElementById('chat-partner-name').innerText = n; 
+            renderFriends(); 
+        }
     };
 
-    // E. 基础聊天功能
+    // --- 4. 聊天与网络 ---
+    let socket = null;
+    let activeChatId = null;
+
+    if(!SERVER_URL.includes('onrender')) alert("Configure SERVER_URL!");
+    else {
+        socket = io(SERVER_URL);
+        socket.on('connect', () => {
+            document.getElementById('conn-status').innerText = "ONLINE";
+            document.getElementById('conn-status').className = "status-badge green";
+            socket.emit('register', MY_ID);
+        });
+        socket.on('disconnect', () => {
+            document.getElementById('conn-status').innerText = "OFFLINE";
+            document.getElementById('conn-status').className = "status-badge red";
+        });
+        socket.on('receive_msg', (msg) => {
+            // 收到消息
+            const fid = msg.from;
+            if(!db.friends.find(f => f.id === fid)) {
+                db.friends.push({ id: fid, addedAt: Date.now(), alias: `User ${fid}` });
+            }
+            if(!db.history[fid]) db.history[fid] = [];
+            db.history[fid].push({ type: msg.type, content: msg.content, isSelf: false, ts: msg.timestamp });
+            saveDB();
+            renderFriends();
+
+            if(activeChatId === fid) appendMsg(msg.content, false, msg.type);
+            else document.getElementById('msg-sound').play().catch(()=>{});
+        });
+    }
+
+    function renderFriends() {
+        const list = document.getElementById('friends-list-container');
+        list.innerHTML = '';
+        db.friends.forEach(f => {
+            const div = document.createElement('div');
+            div.className = 'k-list-item';
+            div.innerHTML = `
+                <div class="avatar-frame"><img src="https://api.dicebear.com/7.x/open-peeps/svg?seed=${f.id}" class="avatar-img"></div>
+                <div><div style="font-weight:bold">${f.alias||f.id}</div><div style="font-size:12px; color:green">SAVED</div></div>
+            `;
+            div.onclick = () => openChat(f.id);
+            list.appendChild(div);
+        });
+    }
+
     function openChat(id) {
         activeChatId = id;
         const f = db.friends.find(x => x.id === id);
         document.getElementById('chat-partner-name').innerText = f ? (f.alias || f.id) : id;
-        document.getElementById('view-chat').classList.add('active');
-        document.getElementById('view-chat').classList.remove('right-sheet');
+        const chatView = document.getElementById('view-chat');
+        chatView.classList.remove('right-sheet');
+        chatView.classList.add('active');
         
         const container = document.getElementById('messages-container');
         container.innerHTML = '';
-        const history = db.history[id] || [];
-        history.forEach(msg => appendMsgDOM(msg, msg.isSelf));
+        const msgs = db.history[id] || [];
+        msgs.forEach(m => appendMsg(m.content, m.isSelf, m.type));
     }
 
-    function sendData(type, content, fileName = null) {
-        if(!activeChatId) return;
-        if(socket && socket.connected) {
-            socket.emit('send_private', { targetId: activeChatId, content, type, fileName });
+    // 修复：输入框模式切换
+    document.getElementById('mode-switch-btn').onclick = () => {
+        document.getElementById('input-mode-text').classList.toggle('hidden');
+        document.getElementById('input-mode-voice').classList.toggle('hidden');
+    };
+
+    document.getElementById('chat-send-btn').onclick = sendText;
+    
+    function sendText() {
+        const txt = document.getElementById('chat-input').value;
+        if(txt) {
+            if(socket && socket.connected) socket.emit('send_private', { targetId: activeChatId, content: txt, type: 'text' });
+            saveMsg(activeChatId, txt, true, 'text');
+            appendMsg(txt, true, 'text');
+            document.getElementById('chat-input').value = '';
         }
-        
-        const msgObj = { type, content, isSelf: true, ts: Date.now(), fileName };
-        if (!db.history[activeChatId]) db.history[activeChatId] = [];
-        db.history[activeChatId].push(msgObj);
-        saveDB();
-        appendMsgDOM(msgObj, true);
     }
 
-    function appendMsgDOM(msg, isSelf) {
+    function saveMsg(id, content, isSelf, type) {
+        if(!db.history[id]) db.history[id] = [];
+        db.history[id].push({ content, isSelf, type, ts: Date.now() });
+        saveDB();
+    }
+
+    function appendMsg(content, isSelf, type) {
         const container = document.getElementById('messages-container');
         const div = document.createElement('div');
         div.className = `msg-row ${isSelf?'self':'other'}`;
-        let html = '';
-        if (msg.type === 'text') html = `<div class="bubble">${msg.content}</div>`;
-        else if (msg.type === 'voice') html = `<div class="bubble" style="cursor:pointer; background:${isSelf?'#59BC10':'#fff'}; color:${isSelf?'#fff':'#000'}" onclick="new Audio('${msg.content}').play()">🎤 Voice Clip ▶</div>`;
-        else if (msg.type === 'image') html = `<div class="bubble"><img src="${msg.content}" style="max-width:150px; border-radius:10px;"></div>`;
-        else if (msg.type === 'file') html = `<div class="bubble">📂 ${msg.fileName}</div>`;
-        else if (msg.type === 'sticker') html = `<img src="${msg.content}" class="sticker-img">`;
-        
-        div.innerHTML = html;
+        if(type === 'text') div.innerHTML = `<div class="bubble">${content}</div>`;
+        else if(type === 'sticker') div.innerHTML = `<img src="${content}" class="sticker-img">`;
         container.appendChild(div);
         container.scrollTop = container.scrollHeight;
     }
 
-    // 事件绑定
-    document.getElementById('chat-send-btn').onclick = () => {
-        const txt = document.getElementById('chat-input').value;
-        if(txt) { sendData('text', txt); document.getElementById('chat-input').value=''; }
-    };
-    document.getElementById('chat-back-btn').onclick = () => {
-        document.getElementById('view-chat').classList.remove('active');
-        setTimeout(()=>document.getElementById('view-chat').classList.add('right-sheet'), 300);
-        activeChatId = null;
-    };
-
-    // Add & Scan
-    window.closeAllModals = () => {
-        document.querySelectorAll('.modal-overlay').forEach(e => e.classList.add('hidden'));
-        if(window.scanner) window.scanner.stop().catch(()=>{});
-    };
-    document.getElementById('add-id-btn').onclick = () => {
-        document.getElementById('add-overlay').classList.remove('hidden');
-        setTimeout(() => document.getElementById('manual-id-input').focus(), 100);
-    };
-    document.getElementById('confirm-add-btn').onclick = () => {
-        const id = document.getElementById('manual-id-input').value;
-        if(id.length === 4) {
-            window.closeAllModals();
-            if(!db.friends.find(f=>f.id===id)) { db.friends.push({id:id, addedAt:Date.now()}); saveDB(); renderFriends(); }
-            openChat(id);
-        }
-    };
-    document.getElementById('scan-btn').onclick = () => {
-        document.getElementById('qr-overlay').classList.remove('hidden');
-        setTimeout(() => {
-            const scanner = new Html5Qrcode("qr-reader");
-            window.scanner = scanner;
-            scanner.start({facingMode:"environment"}, {fps:10, qrbox:200}, txt => {
-                scanner.stop().catch(()=>{});
-                window.closeAllModals();
-                document.getElementById('success-sound').play().catch(()=>{});
-                if(txt.length === 4) {
-                    if(!db.friends.find(f=>f.id===txt)) { db.friends.push({id:txt, addedAt:Date.now()}); saveDB(); renderFriends(); }
-                    openChat(txt);
-                }
-            });
-        }, 300);
-    };
-
-    // FM Radio
-    const fmAudio = document.getElementById('fm-radio');
-    const fmBtn = document.getElementById('fm-btn');
-    fmBtn.onclick = () => {
-        if(fmAudio.paused) { fmAudio.play(); fmBtn.classList.add('playing'); }
-        else { fmAudio.pause(); fmBtn.classList.remove('playing'); }
-    };
-
-    // Voice Record
-    let mediaRecorder, audioChunks;
-    const voiceBtn = document.getElementById('voice-record-btn');
-    const startRec = async () => {
-        try {
-            const stream = await navigator.mediaDevices.getUserMedia({audio:true});
-            mediaRecorder = new MediaRecorder(stream);
-            audioChunks = [];
-            mediaRecorder.ondataavailable = e => audioChunks.push(e.data);
-            mediaRecorder.onstop = () => {
-                const blob = new Blob(audioChunks, {type:'audio/webm'});
-                const reader = new FileReader();
-                reader.readAsDataURL(blob);
-                reader.onloadend = () => sendData('voice', reader.result);
-            };
-            mediaRecorder.start();
-            voiceBtn.classList.add('recording');
-            voiceBtn.innerText = "RECORDING...";
-        } catch(e) { alert("Mic Error"); }
-    };
-    const stopRec = () => { if(mediaRecorder) { mediaRecorder.stop(); voiceBtn.classList.remove('recording'); voiceBtn.innerText="HOLD TO SPEAK"; } };
-    voiceBtn.addEventListener('mousedown', startRec); voiceBtn.addEventListener('mouseup', stopRec);
-    voiceBtn.addEventListener('touchstart', (e)=>{e.preventDefault();startRec()}); voiceBtn.addEventListener('touchend', (e)=>{e.preventDefault();stopRec()});
-
-    // Reset
-    window.resetApp = () => { if(confirm("Reset Data?")) { localStorage.clear(); location.reload(); } };
-
     // Stickers
     const sGrid = document.getElementById('sticker-grid');
-    for(let i=1; i<=30; i++) {
-        const url = `https://api.dicebear.com/7.x/fun-emoji/svg?seed=${i*13}&backgroundColor=transparent`;
+    for(let i=0; i<8; i++) {
+        const url = `https://api.dicebear.com/7.x/fun-emoji/svg?seed=${i*100}`;
         const img = document.createElement('img'); img.src=url; img.className='sticker-item';
-        img.onclick = () => { sendData('sticker', url); document.getElementById('sticker-panel').classList.add('hidden'); };
+        img.onclick = () => {
+            if(activeChatId) {
+                if(socket) socket.emit('send_private', { targetId: activeChatId, content: url, type: 'sticker' });
+                saveMsg(activeChatId, url, true, 'sticker');
+                appendMsg(url, true, 'sticker');
+                document.getElementById('sticker-panel').classList.add('hidden');
+            }
+        };
         sGrid.appendChild(img);
     }
     document.getElementById('sticker-btn').onclick = () => document.getElementById('sticker-panel').classList.toggle('hidden');
 
-    renderFriends();
     document.body.onclick = () => document.getElementById('msg-sound').load();
 });
