@@ -3,14 +3,42 @@ document.addEventListener('DOMContentLoaded', () => {
     // ★★★ 请填入你的 Render 地址 ★★★
     const SERVER_URL = 'https://wojak-backend.onrender.com'; 
 
-    // --- 1. 数据层 ---
-    const DB_KEY = 'pepe_v32_stable';
+    // --- 1. 全局工具函数 (必须先定义) ---
+    window.closeAllModals = () => {
+        document.querySelectorAll('.modal-overlay').forEach(e => e.classList.add('hidden'));
+        if(window.scanner) window.scanner.stop().catch(()=>{});
+    };
+
+    window.switchTab = (id) => {
+        document.querySelectorAll('.page').forEach(p => {
+            if(p.id === id) { p.classList.add('active'); p.classList.remove('right-sheet'); }
+            else if(p.id !== 'view-main') p.classList.remove('active');
+        });
+        if(id === 'tab-identity') {
+            document.getElementById('tab-identity').classList.remove('hidden');
+            document.getElementById('tab-identity').style.display = 'block';
+        }
+    };
+    
+    window.closeIdentity = () => {
+        document.getElementById('tab-identity').classList.add('hidden');
+        document.getElementById('tab-identity').style.display = 'none';
+    };
+
+    window.goBack = () => {
+        document.getElementById('view-chat').classList.remove('active');
+        setTimeout(()=>document.getElementById('view-chat').classList.add('right-sheet'), 300);
+        activeChatId = null;
+    };
+
+    // --- 2. 数据层 ---
+    const DB_KEY = 'pepe_v33_final';
     let db;
     try {
         db = JSON.parse(localStorage.getItem(DB_KEY));
         if(!db || !db.profile) throw new Error("Init");
     } catch(e) {
-        db = {
+        db = { 
             profile: { id: String(Math.floor(1000 + Math.random() * 9000)), avatarSeed: Math.random(), nickname: 'Anon' },
             friends: [], history: {}
         };
@@ -24,110 +52,66 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('card-id-text').innerText = MY_ID;
     document.getElementById('my-nickname').innerText = db.profile.nickname;
     document.getElementById('my-avatar').src = `https://api.dicebear.com/7.x/open-peeps/svg?seed=${db.profile.avatarSeed}`;
+    document.getElementById('card-avatar').src = `https://api.dicebear.com/7.x/open-peeps/svg?seed=${db.profile.avatarSeed}`;
     
     if(window.QRCode) {
         new QRCode(document.getElementById("qrcode"), { text: MY_ID, width: 60, height: 60, colorDark: "#59BC10", colorLight: "#FFFFFF" });
-        new QRCode(document.querySelector(".qr-img"), { text: MY_ID, width: 80, height: 80 });
+        new QRCode(document.querySelector(".qr-img"), { text: MY_ID, width: 60, height: 60 });
     }
 
     renderFriends();
 
-    // --- 2. 交互逻辑 (修复核心) ---
+    // --- 3. 核心功能实现 (修复点) ---
 
-    // 通用：执行连接逻辑 (加好友 + 跳转)
-    // 增加了延时，防止 UI 冲突
-    function executeConnection(id) {
-        if(!id || id.length !== 4) {
-            alert("ID must be 4 digits");
-            return;
+    // A. 添加好友 (逻辑优化：强制跳转)
+    function handleAddFriend(id) {
+        if(id === MY_ID) return;
+        // 1. 存本地
+        if(!db.friends.find(f => f.id === id)) {
+            db.friends.push({ id: id, addedAt: Date.now(), alias: `User ${id}` });
+            saveDB();
+            renderFriends();
         }
-
-        // 1. 关闭所有干扰 UI
-        window.closeAllModals();
-
-        // 2. 延迟 200ms，等待键盘收起和弹窗消失
-        setTimeout(() => {
-            // 3. 业务逻辑
-            if(id !== MY_ID) {
-                // 存本地
-                if(!db.friends.find(f => f.id === id)) {
-                    db.friends.push({ id: id, addedAt: Date.now(), alias: `User ${id}` });
-                    saveDB();
-                    renderFriends();
-                }
-                // 跳转聊天
-                openChat(id);
-            }
-        }, 200);
+        // 2. 强制跳转
+        openChat(id);
     }
 
-    // A. 手动添加 (Add ID)
-    document.getElementById('add-id-btn').onclick = () => {
-        document.getElementById('add-overlay').classList.remove('hidden');
-        // 延时聚焦，防止键盘弹不出
-        setTimeout(() => document.getElementById('manual-id-input').focus(), 100);
-    };
-
+    // B. 手动添加
+    document.getElementById('add-id-btn').onclick = () => document.getElementById('add-overlay').classList.remove('hidden');
     document.getElementById('confirm-add-btn').onclick = () => {
-        const input = document.getElementById('manual-id-input');
-        const id = input.value.trim(); // 获取值
-        
-        input.value = ''; // 立即清空，防止误触
-        input.blur();     // 强制收起键盘
-        
-        executeConnection(id); // 执行带延时的连接
+        const id = document.getElementById('manual-id-input').value;
+        if(id.length === 4) {
+            window.closeAllModals();
+            // 使用 setTimeout 避开 UI 线程阻塞
+            setTimeout(() => handleAddFriend(id), 100);
+            document.getElementById('manual-id-input').value = '';
+        } else { alert("Must be 4 digits"); }
     };
 
-    // B. 扫码添加 (Scan QR)
+    // C. 扫码 (使用 Promise 链防止卡死)
     document.getElementById('scan-btn').onclick = () => {
         document.getElementById('qr-overlay').classList.remove('hidden');
         setTimeout(() => {
-            if(!window.Html5Qrcode) return alert("Scanner Error");
             const scanner = new Html5Qrcode("qr-reader");
             window.scanner = scanner;
-            
             scanner.start({facingMode:"environment"}, {fps:10, qrbox:200}, txt => {
-                // 扫码成功
+                // 成功
                 document.getElementById('success-sound').play().catch(()=>{});
                 if(navigator.vibrate) navigator.vibrate(200);
                 
-                // 停止扫描
+                // 强制停止 -> 关闭 -> 跳转
                 scanner.stop().then(() => {
-                    window.scanner.clear();
-                }).catch(()=>{});
-
-                // 执行连接
-                executeConnection(txt);
-
-            }).catch(e=>{ console.log(e); });
+                    window.closeAllModals();
+                    if(txt.length === 4) handleAddFriend(txt);
+                    else alert("Invalid Code");
+                }).catch(err => {
+                    window.closeAllModals(); // 即使停止失败也强关
+                });
+            }).catch(e=>{ alert("Camera Error"); window.closeAllModals(); });
         }, 300);
     };
 
-    // 全局关闭弹窗
-    window.closeAllModals = () => {
-        document.querySelectorAll('.modal-overlay').forEach(e => e.classList.add('hidden'));
-        if(window.scanner) {
-            try { window.scanner.stop(); } catch(e){}
-        }
-    };
-
-    // 页面切换
-    window.switchTab = (id) => {
-        document.querySelectorAll('.page').forEach(p => {
-            if(p.id === id) { p.classList.add('active'); p.classList.remove('right-sheet'); }
-            else if(p.id !== 'view-main') p.classList.remove('active');
-        });
-    };
-
-    window.goBack = () => {
-        document.getElementById('view-chat').classList.remove('active');
-        setTimeout(()=>document.getElementById('view-chat').classList.add('right-sheet'), 300);
-        document.getElementById('view-card').classList.remove('active');
-        setTimeout(()=>document.getElementById('view-card').classList.add('right-sheet'), 300);
-        activeChatId = null;
-    };
-
-    // --- 3. 聊天与网络 ---
+    // --- 4. 聊天与网络 ---
     let socket = null;
     let activeChatId = null;
 
@@ -136,12 +120,12 @@ document.addEventListener('DOMContentLoaded', () => {
         socket = io(SERVER_URL, { reconnection: true });
         
         socket.on('connect', () => {
-            document.getElementById('conn-status').className = "status-pill green";
+            document.getElementById('conn-status').className = "status-dot green";
             socket.emit('register', MY_ID);
         });
 
         socket.on('disconnect', () => {
-            document.getElementById('conn-status').className = "status-pill red";
+            document.getElementById('conn-status').className = "status-dot red";
         });
 
         socket.on('receive_msg', (msg) => {
