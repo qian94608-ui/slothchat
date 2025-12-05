@@ -3,7 +3,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // ★★★ 请填入你的 Render 地址 ★★★
     const SERVER_URL = 'https://wojak-backend.onrender.com'; 
 
-    // --- 1. 全局工具函数 (必须先定义) ---
+    // --- 1. 全局工具函数 ---
     window.closeAllModals = () => {
         document.querySelectorAll('.modal-overlay').forEach(e => e.classList.add('hidden'));
         if(window.scanner) window.scanner.stop().catch(()=>{});
@@ -31,7 +31,7 @@ document.addEventListener('DOMContentLoaded', () => {
         activeChatId = null;
     };
 
-    // --- 2. 数据层 ---
+    // --- 2. 数据层 (已优化：只存文本) ---
     const DB_KEY = 'pepe_v33_final';
     let db;
     try {
@@ -61,28 +61,25 @@ document.addEventListener('DOMContentLoaded', () => {
 
     renderFriends();
 
-    // --- 3. 核心功能实现 (修复点) ---
+    // --- 3. 好友与扫码功能 ---
 
-    // A. 添加好友 (逻辑优化：强制跳转)
+    // A. 添加好友
     function handleAddFriend(id) {
         if(id === MY_ID) return;
-        // 1. 存本地
         if(!db.friends.find(f => f.id === id)) {
             db.friends.push({ id: id, addedAt: Date.now(), alias: `User ${id}` });
             saveDB();
             renderFriends();
         }
-        // 2. 强制跳转
         openChat(id);
     }
 
-    // B. 手动添加
+    // B. 手动添加按钮
     document.getElementById('add-id-btn').onclick = () => document.getElementById('add-overlay').classList.remove('hidden');
     document.getElementById('confirm-add-btn').onclick = () => {
         const id = document.getElementById('manual-id-input').value;
         if(id.length === 4) {
             window.closeAllModals();
-            // 使用 setTimeout 避开 UI 线程阻塞
             setTimeout(() => handleAddFriend(id), 100);
             document.getElementById('manual-id-input').value = '';
         } else { alert("Must be 4 digits"); }
@@ -95,23 +92,20 @@ document.addEventListener('DOMContentLoaded', () => {
             const scanner = new Html5Qrcode("qr-reader");
             window.scanner = scanner;
             scanner.start({facingMode:"environment"}, {fps:10, qrbox:200}, txt => {
-                // 成功
                 document.getElementById('success-sound').play().catch(()=>{});
                 if(navigator.vibrate) navigator.vibrate(200);
-                
-                // 强制停止 -> 关闭 -> 跳转
                 scanner.stop().then(() => {
                     window.closeAllModals();
                     if(txt.length === 4) handleAddFriend(txt);
                     else alert("Invalid Code");
                 }).catch(err => {
-                    window.closeAllModals(); // 即使停止失败也强关
+                    window.closeAllModals(); 
                 });
             }).catch(e=>{ alert("Camera Error"); window.closeAllModals(); });
         }, 300);
     };
 
-    // --- 4. 聊天与网络 ---
+    // --- 4. 聊天与网络 (核心修复区) ---
     let socket = null;
     let activeChatId = null;
 
@@ -135,10 +129,20 @@ document.addEventListener('DOMContentLoaded', () => {
                 db.friends.push({ id: fid, addedAt: Date.now(), alias: `User ${fid}` });
             }
             if(!db.history[fid]) db.history[fid] = [];
-            db.history[fid].push({ type: msg.type, content: msg.content, isSelf: false, ts: msg.timestamp, fileName: msg.fileName });
-            saveDB();
+            
+            // ★ 修复：只保存文本消息到本地数据库，防止崩坏 ★
+            if (msg.type === 'text') {
+                db.history[fid].push({ type: msg.type, content: msg.content, isSelf: false, ts: msg.timestamp });
+                saveDB();
+            } else {
+                // 如果是文件/图片，仅在内存中处理，不存 LocalStorage
+                // 也可以存一个占位符，避免刷新后完全看不出这里有过消息
+                db.history[fid].push({ type: 'text', content: '[Media Message]', isSelf: false, ts: msg.timestamp });
+                saveDB();
+            }
             renderFriends();
 
+            // 如果正在聊天窗口，直接显示全量内容（包括图片/文件）
             if(activeChatId === fid) appendMsgDOM(msg, false);
             else document.getElementById('msg-sound').play().catch(()=>{});
         });
@@ -180,10 +184,22 @@ document.addEventListener('DOMContentLoaded', () => {
         if(socket && socket.connected) {
             socket.emit('send_private', { targetId: activeChatId, content, type, fileName });
         }
+        
         const msgObj = { type, content, isSelf: true, ts: Date.now(), fileName };
+        
+        // ★ 修复：只保存文本到数据库 ★
         if(!db.history[activeChatId]) db.history[activeChatId] = [];
-        db.history[activeChatId].push(msgObj);
-        saveDB();
+        
+        if (type === 'text') {
+            db.history[activeChatId].push(msgObj);
+            saveDB();
+        } else {
+            // 大文件不存库，只存占位符
+             db.history[activeChatId].push({ ...msgObj, type: 'text', content: '[Media Message]' });
+             saveDB();
+        }
+
+        // 界面上直接显示原始内容
         appendMsgDOM(msgObj, true);
     }
 
@@ -202,7 +218,7 @@ document.addEventListener('DOMContentLoaded', () => {
         container.scrollTop = container.scrollHeight;
     }
 
-    // UI Buttons
+    // --- 5. UI 按钮与交互 (已修复输入切换) ---
     document.getElementById('chat-send-btn').onclick = () => {
         const txt = document.getElementById('chat-input').value;
         if(txt) { sendData('text', txt); document.getElementById('chat-input').value=''; }
@@ -210,24 +226,31 @@ document.addEventListener('DOMContentLoaded', () => {
     
     document.getElementById('chat-back-btn').onclick = window.goBack;
 
+    // ★★★ 修复：输入模式切换逻辑 ★★★
     const modeSwitch = document.getElementById('mode-switch-btn');
-    let isVoice = true;
+    const voiceBtn = document.getElementById('voice-record-btn');
+    const textWrapper = document.getElementById('text-input-wrapper');
+    let isVoice = true; // 根据 HTML 默认状态，voice 是显示的
+
     modeSwitch.onclick = () => {
         isVoice = !isVoice;
         if(isVoice) {
-            document.getElementById('input-mode-text').classList.add('hidden');
-            document.getElementById('input-mode-voice').classList.remove('hidden');
+            // 切换到语音
+            textWrapper.classList.add('hidden');
+            voiceBtn.classList.remove('hidden');
             modeSwitch.innerText = "⌨️";
         } else {
-            document.getElementById('input-mode-voice').classList.add('hidden');
-            document.getElementById('input-mode-text').classList.remove('hidden');
+            // 切换到键盘
+            voiceBtn.classList.add('hidden');
+            textWrapper.classList.remove('hidden');
             modeSwitch.innerText = "🎤";
+            setTimeout(() => document.getElementById('chat-input').focus(), 100);
         }
     };
 
     // Voice Record
     let mediaRecorder, audioChunks;
-    const voiceBtn = document.getElementById('voice-record-btn');
+    
     const startRec = async () => {
         try {
             const stream = await navigator.mediaDevices.getUserMedia({audio:true});
@@ -244,8 +267,12 @@ document.addEventListener('DOMContentLoaded', () => {
         } catch(e) { alert("Mic Error"); }
     };
     const stopRec = () => { if(mediaRecorder) { mediaRecorder.stop(); voiceBtn.classList.remove('recording'); voiceBtn.innerText="HOLD TO SPEAK"; } };
-    voiceBtn.addEventListener('mousedown', startRec); voiceBtn.addEventListener('mouseup', stopRec);
-    voiceBtn.addEventListener('touchstart', (e)=>{e.preventDefault();startRec()}); voiceBtn.addEventListener('touchend', (e)=>{e.preventDefault();stopRec()});
+    
+    // 绑定录音事件
+    voiceBtn.addEventListener('mousedown', startRec); 
+    voiceBtn.addEventListener('mouseup', stopRec);
+    voiceBtn.addEventListener('touchstart', (e)=>{e.preventDefault();startRec()}); 
+    voiceBtn.addEventListener('touchend', (e)=>{e.preventDefault();stopRec()});
 
     // Nickname & FM
     window.editMyName = () => { const n = prompt("New Name:", db.profile.nickname); if(n) { db.profile.nickname=n; saveDB(); document.getElementById('my-nickname').innerText=n; } };
@@ -268,7 +295,16 @@ document.addEventListener('DOMContentLoaded', () => {
     window.addEventListener('dragenter', () => { if(activeChatId) drag.classList.remove('hidden'); });
     drag.addEventListener('dragleave', (e) => { if(e.target===drag) drag.classList.add('hidden'); });
     window.addEventListener('dragover', e => e.preventDefault());
-    window.addEventListener('drop', e => { e.preventDefault(); drag.classList.add('hidden'); if(activeChatId && e.dataTransfer.files[0]) { const f=e.dataTransfer.files[0]; const r=new FileReader(); r.readAsDataURL(f); r.onload=()=>sendData('file', r.result, f.name); } });
+    window.addEventListener('drop', e => { 
+        e.preventDefault(); 
+        drag.classList.add('hidden'); 
+        if(activeChatId && e.dataTransfer.files[0]) { 
+            const f=e.dataTransfer.files[0]; 
+            const r=new FileReader(); 
+            r.readAsDataURL(f); 
+            r.onload=()=>sendData('file', r.result, f.name); 
+        } 
+    });
 
     document.body.onclick = () => document.getElementById('msg-sound').load();
 });
