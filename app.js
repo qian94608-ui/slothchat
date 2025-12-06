@@ -8,29 +8,41 @@ document.addEventListener('DOMContentLoaded', () => {
     styleSheet.innerText = `
         :root {
             --glass-bg: rgba(255, 255, 255, 0.95);
+            /* ★ 核心色调：Pepe Green ★ */
             --primary: #59BC10; 
+            --primary-dark: #46960C;
             --danger: #FF3B30;
             --shadow-sm: 0 2px 8px rgba(0,0,0,0.08);
         }
         body { background: #F2F2F7; font-family: -apple-system, sans-serif; -webkit-tap-highlight-color: transparent; }
         .defi-nav { display: none !important; }
         .scroll-content { padding-bottom: 30px !important; }
+        
+        /* 列表项 */
         .k-list-item { background: #fff; border-radius: 14px; padding: 14px; margin-bottom: 10px; box-shadow: var(--shadow-sm); transition: transform 0.1s; }
         .k-list-item:active { transform: scale(0.98); background: #f2f2f2; }
-        
-        /* 拨号盘修正 */
+
+        /* ★ 拨号盘样式 ★ */
         .numpad-container { display: flex; flex-direction: column; align-items: center; padding: 10px; }
-        .id-display-screen { font-size: 36px; font-weight: 800; letter-spacing: 6px; color: var(--primary); margin-bottom: 20px; border-bottom: 2px solid #eee; width: 80%; text-align: center; height: 50px; }
+        .id-display-screen {
+            font-size: 36px; font-weight: 800; letter-spacing: 6px; color: var(--primary);
+            margin-bottom: 20px; border-bottom: 2px solid #eee; width: 80%; text-align: center; height: 50px; line-height: 50px;
+        }
         .numpad-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 15px; width: 100%; max-width: 260px; }
-        .num-btn { width: 60px; height: 60px; border-radius: 50%; background: #fff; box-shadow: 0 3px 0 #eee; border: 1px solid #ddd; font-size: 24px; font-weight: bold; color: #333; display: flex; justify-content: center; align-items: center; cursor: pointer; user-select: none; }
+        .num-btn {
+            width: 65px; height: 65px; border-radius: 50%; background: #fff;
+            box-shadow: 0 3px 0 #eee; border: 1px solid #ddd;
+            font-size: 24px; font-weight: bold; color: #333;
+            display: flex; justify-content: center; align-items: center; cursor: pointer; user-select: none;
+        }
         .num-btn:active { transform: translateY(3px); box-shadow: none; background: #eee; }
         
-        /* 特殊按钮样式 */
+        /* 握手与清除按钮 */
         .num-btn.clear { color: var(--danger); font-size: 18px; }
-        .num-btn.connect { background: var(--primary); color: #fff; font-size: 28px; border: none; box-shadow: 0 4px 10px rgba(89, 188, 16, 0.3); }
-        .num-btn.connect:active { background: #46960C; }
+        .num-btn.connect { background: var(--primary); color: #fff; border: none; box-shadow: 0 4px 10px rgba(89, 188, 16, 0.3); font-size: 30px; }
+        .num-btn.connect:active { background: var(--primary-dark); }
 
-        /* 气泡 */
+        /* 气泡与媒体 */
         .bubble { border: none !important; border-radius: 18px !important; padding: 10px 14px; box-shadow: 0 1px 2px rgba(0,0,0,0.1); max-width: 80%; }
         .msg-row.self .bubble { background: var(--primary); color: #fff; }
         .msg-row.other .bubble { background: #fff; color: #000; }
@@ -38,7 +50,7 @@ document.addEventListener('DOMContentLoaded', () => {
         .thumb-img { max-width: 100%; height: auto; display: block; object-fit: contain; }
         .sticker-img { width: 80px !important; height: 80px !important; object-fit: contain !important; }
 
-        /* 语音 */
+        /* 语音波纹 */
         .voice-bubble { display: flex; align-items: center; gap: 8px; min-width: 100px; }
         .wave-visual { display: flex; align-items: center; gap: 3px; height: 16px; }
         .wave-bar { width: 3px; height: 30%; background: #ccc; border-radius: 2px; }
@@ -50,7 +62,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
         .cancel-btn { position: absolute; top:5px; right:5px; background:rgba(0,0,0,0.6); color:#fff; width:22px; height:22px; border-radius:50%; text-align:center; line-height:22px; font-size:12px; cursor:pointer; z-index:10; }
         .modal-overlay { z-index: 100000 !important; background: rgba(0,0,0,0.6) !important; backdrop-filter: blur(5px); }
-        .modal-box { border-radius: 20px; overflow: hidden; }
+        .modal-header { background: var(--primary) !important; color: #fff; border:none; }
+        .close-x { color: #fff !important; background: rgba(0,0,0,0.2) !important; }
+        .modal-box { border-radius: 20px; overflow: hidden; border: none; }
         .drag-overlay { display: none; z-index: 99999; }
         .drag-overlay.active { display: flex; }
     `;
@@ -65,7 +79,7 @@ document.addEventListener('DOMContentLoaded', () => {
     document.body.insertAdjacentHTML('beforeend', previewModalHTML);
 
     // --- 1. 数据 ---
-    const DB_KEY = 'pepe_v36_final_numpad';
+    const DB_KEY = 'pepe_v37_final_fix';
     const CHUNK_SIZE = 12 * 1024;
     let db;
     try {
@@ -78,10 +92,9 @@ document.addEventListener('DOMContentLoaded', () => {
     const saveDB = () => localStorage.setItem(DB_KEY, JSON.stringify(db));
     const MY_ID = db.profile.id;
 
-    // --- 2. 拨号盘逻辑 (含握手按钮) ---
+    // --- 2. 拨号盘逻辑 (★ 修复：握手点击逻辑 ★) ---
     let dialInput = "";
     
-    // 生成拨号盘
     const setupDialpad = () => {
         const modalBody = document.querySelector('#add-overlay .modal-body');
         if (modalBody) {
@@ -110,17 +123,22 @@ document.addEventListener('DOMContentLoaded', () => {
             return; 
         }
         
-        // 确认连接
+        // ★ 确认连接 (修复逻辑)
         if (key === 'OK') {
             if (dialInput.length === 4) {
                 if (dialInput === MY_ID) {
                     alert("Cannot add yourself!");
                     return;
                 }
-                window.closeAllModals();
-                handleAddFriend(dialInput); // 触发添加和跳转
-                dialInput = "";
-                display.innerText = "____";
+                // ★ 关键顺序：先执行业务逻辑，再关闭弹窗，避免 UI 状态错乱
+                try {
+                    handleAddFriend(dialInput); // 触发添加逻辑
+                    setTimeout(() => window.closeAllModals(), 100); // 稍后关闭弹窗
+                    dialInput = "";
+                    display.innerText = "____";
+                } catch(e) {
+                    alert("Error: " + e.message);
+                }
             } else {
                 alert("Please enter 4 digits ID");
             }
@@ -131,7 +149,6 @@ document.addEventListener('DOMContentLoaded', () => {
         if (dialInput.length < 4 && typeof key === 'number') {
             dialInput += key;
             display.innerText = dialInput.padEnd(4, '_');
-            // 震动反馈
             if(navigator.vibrate) navigator.vibrate(30);
         }
     };
@@ -148,6 +165,7 @@ document.addEventListener('DOMContentLoaded', () => {
     renderProfile();
     setupDialpad();
 
+    // --- 4. 核心逻辑 (★ 修复：强制跳转 ★) ---
     function handleAddFriend(id) {
         if(id === MY_ID) return;
         if(!db.friends.find(f => f.id === id)) {
@@ -157,13 +175,13 @@ document.addEventListener('DOMContentLoaded', () => {
         openChat(id);
     }
 
-    // --- 3. 网络与传输 (队列版) ---
+    // --- 5. 网络与传输 (队列版+隧道) ---
     let socket = null;
     let activeChatId = null;
     let activeDownloads = {};
     let isSending = false;
     let cancelFlag = {};
-    let uploadQueue = [];
+    let uploadQueue = []; // 文件夹队列
 
     if(!SERVER_URL.includes('onrender')) alert("Configure SERVER_URL!");
     else {
@@ -239,7 +257,7 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    // --- 队列发送 ---
+    // --- 队列发送 (支持文件夹) ---
     function addToQueue(file) { uploadQueue.push(file); processQueue(); }
     function processQueue() {
         if(isSending || uploadQueue.length === 0) return;
@@ -294,7 +312,6 @@ document.addEventListener('DOMContentLoaded', () => {
         readNext();
     }
 
-    // --- 文件夹遍历 ---
     function traverseFileTree(item, path) {
         path = path || "";
         if (item.isFile) { item.file(function(file) { addToQueue(file); }); } 
@@ -333,7 +350,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 const f = new File([b], "voice.wav", {type:mime});
                 addToQueue(f); s.getTracks().forEach(t=>t.stop());
             };
-            rec.start(); vBtn.innerText="RECORDING..."; vBtn.classList.add('recording');
+            rec.start();
+            vBtn.innerText="RECORDING..."; vBtn.classList.add('recording');
         } catch(e){ alert("Mic Required!"); }
     };
     const stopR = (e) => {
@@ -350,6 +368,32 @@ document.addEventListener('DOMContentLoaded', () => {
     };
     document.getElementById('chat-send-btn').onclick = handleSend;
     document.getElementById('chat-input').addEventListener('keypress', (e) => { if(e.key === 'Enter') handleSend(); });
+
+    // ★ 修复：OpenChat 安全版 ★
+    function openChat(id) {
+        try {
+            if('speechSynthesis' in window) window.speechSynthesis.cancel();
+        } catch(e){}
+
+        activeChatId = id; 
+        const f = db.friends.find(x => x.id === id);
+        
+        // 强制更新 UI，防止中断
+        document.getElementById('chat-partner-name').innerText = f ? (f.alias || f.id) : id;
+        document.getElementById('chat-online-dot').className = "status-dot red";
+        
+        const chatView = document.getElementById('view-chat');
+        chatView.classList.remove('right-sheet');
+        chatView.classList.add('active');
+        
+        // 推送历史，拦截返回键
+        window.history.pushState({ chatOpen: true, id: id }, "");
+
+        const container = document.getElementById('messages-container'); 
+        container.innerHTML = '';
+        const msgs = db.history[id] || []; 
+        msgs.forEach(m => appendMsgDOM(m, m.isSelf));
+    }
 
     // 历史返回
     window.goBack = () => { if (activeChatId) window.history.back(); };
@@ -378,6 +422,7 @@ document.addEventListener('DOMContentLoaded', () => {
         } else if(e.dataTransfer.files[0]) addToQueue(e.dataTransfer.files[0]);
     });
 
+    // 按钮绑定
     document.getElementById('add-id-btn').onclick = () => { 
         document.getElementById('add-overlay').classList.remove('hidden'); 
         dialInput=""; document.getElementById('dial-display').innerText="____"; 
