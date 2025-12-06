@@ -2,80 +2,85 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const SERVER_URL = 'https://wojak-backend.onrender.com';
 
-    // --- 0. 强制样式 (布局物理隔离 + Pepe风格) ---
+    // --- 0. 样式定义 (修复层级与点击区域) ---
     const styleSheet = document.createElement("style");
     styleSheet.innerText = `
         :root { --pepe-green: #59BC10; --pepe-dark: #46960C; --bg: #F2F2F7; --danger: #FF3B30; }
-        body { background: var(--bg); font-family: sans-serif; -webkit-tap-highlight-color: transparent; overflow: hidden; /* 禁止整体滚动 */ }
-        
+        body { background: var(--bg); font-family: sans-serif; -webkit-tap-highlight-color: transparent; overscroll-behavior-y: none; }
         .defi-nav { display: none !important; }
-        
-        /* ★ 核心布局修复：绝对定位隔离 ★ */
-        .defi-header { 
-            position: fixed; top: 0; left: 0; width: 100%; height: 60px; 
-            background: #fff; z-index: 100; border-bottom: 1px solid #eee;
-            display: flex; justify-content: space-between; align-items: center; padding: 0 15px; box-sizing: border-box;
-        }
+        .scroll-content { padding-bottom: 80px !important; }
 
+        /* 头部 */
+        .defi-header { display: flex; justify-content: space-between; align-items: center; padding: 10px 15px; background: #fff; z-index: 100; position: relative; border-bottom: 1px solid #eee; }
+        .user-pill { display: flex; align-items: center; gap: 10px; background: #f5f5f5; padding: 5px 10px; border-radius: 20px; cursor: pointer; border: 1px solid #ddd; }
+        /* ★ 修复：强制显示本地图标 ★ */
+        .header-avatar { width: 32px; height: 32px; border-radius: 50%; background: #fff; object-fit: contain; border: 1px solid #eee; }
+
+        /* 底部输入栏 */
         .chat-footer { 
             position: fixed; bottom: 0; left: 0; width: 100%; height: 70px; 
-            background: #fff; border-top: 1px solid #eee; z-index: 500; 
-            display: flex; align-items: center; padding: 0 8px; box-sizing: border-box;
+            background: #fff; display: flex; align-items: center; padding: 0 8px; 
+            border-top: 1px solid #eee; z-index: 500; box-sizing: border-box;
         }
-
-        /* ★ 消息容器：物理限制高度，绝不被遮挡 ★ */
-        #messages-container {
-            position: fixed; top: 60px; bottom: 70px; left: 0; right: 0;
-            overflow-y: auto; -webkit-overflow-scrolling: touch;
-            padding: 15px; background: #F2F2F7;
-            display: flex; flex-direction: column; gap: 10px;
-        }
-        
-        /* 列表容器 */
-        .scroll-content { 
-            margin-top: 60px; height: calc(100vh - 60px); overflow-y: auto; 
-            padding: 20px; padding-bottom: 40px; box-sizing: border-box; 
-        }
-
-        /* 头部元素 */
-        .user-pill { display: flex; align-items: center; gap: 10px; background: #f5f5f5; padding: 5px 10px; border-radius: 20px; cursor: pointer; border: 1px solid #ddd; }
-        .header-avatar { width: 32px; height: 32px; border-radius: 50%; background: #ddd; object-fit: cover; }
-
-        /* 底部工具 */
-        .footer-tool, #sticker-btn, #file-btn { 
+        .footer-tool, #sticker-btn, #file-btn, #mode-switch-btn { 
             width: 40px; height: 40px; border-radius: 50%; background: #f2f2f2; 
             border: 1px solid #ddd; font-size: 20px; flex-shrink: 0; margin: 0 3px; 
             display: flex; justify-content: center; align-items: center; cursor: pointer;
         }
 
         .input-zone { flex: 1; position: relative; height: 42px; margin: 0 4px; display: flex; min-width: 0; }
-        .text-wrapper { width: 100%; height: 100%; display: flex; align-items: center; position: absolute; top: 0; left: 0; z-index: 20; background: #fff; }
-        .text-wrapper.hidden { display: none !important; }
-        #chat-input { flex: 1; height: 100%; border-radius: 20px; background: #f9f9f9; border: 1px solid #ddd; padding: 0 12px; outline: none; font-size: 16px; min-width: 0; color: #000; }
         
-        /* ★ 修复发送按钮层级 ★ */
+        /* 文本框容器 - 强制层级 */
+        .text-wrapper { 
+            width: 100%; height: 100%; display: flex; align-items: center; gap: 5px;
+            position: absolute; top: 0; left: 0; z-index: 50; background: #fff; 
+        }
+        .text-wrapper.hidden { display: none !important; }
+        
+        #chat-input { 
+            flex: 1; height: 100%; border-radius: 20px; background: #f9f9f9; 
+            border: 1px solid #ddd; padding: 0 12px; outline: none; font-size: 16px; min-width: 0; color: #000;
+        }
+        
+        /* ★ 修复：发送按钮层级 ★ */
         .send-arrow { 
             width: 40px; height: 40px; border-radius: 50%; background: var(--pepe-green); 
             color: #fff; border: none; font-weight: bold; flex-shrink: 0; margin-left: 5px; 
-            cursor: pointer; z-index: 999; 
+            cursor: pointer; z-index: 100; pointer-events: auto; display: flex; justify-content: center; align-items: center;
         }
-        
-        .voice-btn-long { width: 100%; height: 100%; border-radius: 21px; background: var(--danger); color: #fff; font-weight: bold; border: none; font-size: 14px; position: absolute; top: 0; left: 0; z-index: 10; display: none; cursor: pointer; }
+
+        .voice-btn-long { 
+            width: 100%; height: 100%; border-radius: 21px; background: var(--danger); 
+            color: #fff; font-weight: bold; border: none; font-size: 14px;
+            position: absolute; top: 0; left: 0; z-index: 10; 
+            display: none; cursor: pointer;
+        }
         .voice-btn-long.active { display: block !important; }
         .voice-btn-long.recording { animation: pulse 1s infinite; }
 
-        /* 列表项 */
+        /* 列表与气泡 */
         .k-list-item { background: #fff; border-radius: 12px; padding: 12px; margin-bottom: 10px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); border: 1px solid #f0f0f0; position: relative; }
         .k-list-item:active { transform: scale(0.98); background: #f5f5f5; }
 
-        /* 气泡 */
         .bubble { padding: 10px 14px; border-radius: 16px; max-width: 75%; word-break: break-word; box-shadow: 0 1px 2px rgba(0,0,0,0.05); position: relative; }
         .msg-row.self .bubble { background: var(--pepe-green); color: #fff; }
         .msg-row.other .bubble { background: #fff; color: #000; border: 1px solid #eee; }
         .bubble.clean { background: none !important; padding: 0 !important; box-shadow: none !important; border: none !important; }
 
+        /* 媒体与文档 */
+        .thumb-box { border-radius: 12px; overflow: hidden; background: #000; max-width: 200px; display: block; position: relative; }
+        .thumb-img { width: 100%; height: auto; display: block; object-fit: contain; }
+        .sticker-img { width: 100px; height: 100px; object-fit: contain; display: block; }
+        
+        .doc-card { display: flex; align-items: center; gap: 10px; background: #fff; padding: 10px; border-radius: 10px; text-decoration: none; color: #333 !important; border: 1px solid #eee; min-width: 200px; box-shadow: 0 2px 5px rgba(0,0,0,0.05); }
+        .doc-name { font-weight: bold; font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 150px; color: #000; }
+        
+        .audio-player { display: flex; align-items: center; gap: 8px; }
+        .audio-btn { width: 28px; height: 28px; border-radius: 50%; background: rgba(255,255,255,0.3); border: 1px solid rgba(255,255,255,0.5); color: inherit; display: flex; justify-content: center; align-items: center; cursor: pointer; }
+        .msg-row.other .audio-btn { background: #f0f0f0; border-color: #ddd; color: #333; }
+
         /* 进度条 */
-        .progress-wrapper { background: #fff; padding: 10px; border-radius: 10px; border: 2px solid var(--pepe-green); min-width: 180px; color: #333; }
+        .progress-wrapper { background: #fff; padding: 10px; border-radius: 10px; border: 2px solid var(--pepe-green); min-width: 160px; color: #333; }
         .msg-row.self .progress-wrapper { background: var(--pepe-dark); color: #fff; border-color: #fff; }
         .progress-track { height: 6px; background: rgba(0,0,0,0.1); border-radius: 3px; margin: 5px 0; overflow: hidden; }
         .msg-row.self .progress-track { background: rgba(255,255,255,0.3); }
@@ -83,31 +88,7 @@ document.addEventListener('DOMContentLoaded', () => {
         .msg-row.self .progress-fill { background: #fff; }
         .msg-row.other .progress-fill { background: var(--pepe-green); }
 
-        /* 文档卡片 */
-        .doc-card { display: flex; align-items: center; gap: 10px; background: #fff; padding: 10px; border-radius: 10px; text-decoration: none; color: #333 !important; border: 1px solid #eee; min-width: 200px; box-shadow: 0 2px 5px rgba(0,0,0,0.05); }
-        .doc-name { font-weight: bold; font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 150px; color: #000; }
-        .doc-type { font-size: 10px; color: #888; font-weight: 900; }
-
-        /* 媒体 */
-        .thumb-box { border-radius: 12px; overflow: hidden; background: #000; max-width: 200px; display: block; }
-        .thumb-img { width: 100%; height: auto; display: block; }
-        .sticker-img { width: 100px; height: 100px; object-fit: contain; display: block; }
-
-        /* 音频 */
-        .audio-player { display: flex; align-items: center; gap: 8px; }
-        .audio-btn { width: 28px; height: 28px; border-radius: 50%; background: rgba(255,255,255,0.3); border: 1px solid rgba(255,255,255,0.5); color: inherit; display: flex; justify-content: center; align-items: center; cursor: pointer; }
-        .msg-row.other .audio-btn { background: #f0f0f0; border-color: #ddd; color: #333; }
-
-        /* 动画 */
-        .shake-active { animation: shake 0.5s infinite; border-left: 4px solid var(--danger); }
-        .marquee-text { display: inline-block; padding-left: 100%; animation: scroll 4s linear infinite; color: var(--danger); font-size: 10px; font-weight: 900; }
-        @keyframes shake { 0%,100%{transform:translateX(0);} 25%{transform:translateX(-3px);} 75%{transform:translateX(3px);} }
-        @keyframes scroll { 100% { transform: translateX(-100%); } }
-        @keyframes pulse { 0% {transform: scale(1);} 50% {transform: scale(1.05);} }
-
-        .list-edit-btn { position: absolute; right: 15px; top: 50%; transform: translateY(-50%); color: #ccc; font-size: 18px; padding: 5px; z-index: 10; }
-        .cancel-btn { position: absolute; top: -8px; right: -8px; width: 22px; height: 22px; background: var(--danger); color: #fff; border-radius: 50%; font-size: 12px; display: flex; justify-content: center; align-items: center; cursor: pointer; z-index: 5; border: 2px solid #fff; }
-        
+        /* 模态框 */
         .modal-overlay { z-index: 100000 !important; background: rgba(0,0,0,0.8); }
         .numpad-container { padding: 15px; text-align: center; }
         .id-display-screen { font-size: 36px; color: var(--pepe-green); border-bottom: 3px solid #eee; margin-bottom: 20px; font-weight: 900; letter-spacing: 4px; height: 50px; line-height: 50px; }
@@ -116,6 +97,14 @@ document.addEventListener('DOMContentLoaded', () => {
         .num-btn:active { transform: translateY(4px); box-shadow: none; }
         .num-btn.connect { background: var(--pepe-green); color: #fff; border-color: var(--pepe-dark); box-shadow: 0 4px 0 var(--pepe-dark); }
         
+        .shake-active { animation: shake 0.5s infinite; border-left: 4px solid var(--danger); }
+        .marquee-text { display: inline-block; padding-left: 100%; animation: scroll 4s linear infinite; color: var(--danger); font-size: 10px; font-weight: 900; }
+        @keyframes shake { 0%,100%{transform:translateX(0);} 25%{transform:translateX(-3px);} 75%{transform:translateX(3px);} }
+        @keyframes scroll { 100% { transform: translateX(-100%); } }
+        @keyframes pulse { 0% {transform: scale(1);} 50% {transform: scale(1.05);} }
+        
+        .list-edit-btn { position: absolute; right: 15px; top: 50%; transform: translateY(-50%); color: #ccc; font-size: 18px; padding: 5px; z-index: 10; }
+        .cancel-btn { position: absolute; top: -8px; right: -8px; width: 22px; height: 22px; background: var(--danger); color: #fff; border-radius: 50%; font-size: 12px; display: flex; justify-content: center; align-items: center; cursor: pointer; z-index: 5; border: 2px solid #fff; }
         .drag-overlay { display: none; z-index: 99999; }
         .drag-overlay.active { display: flex; }
     `;
@@ -125,7 +114,7 @@ document.addEventListener('DOMContentLoaded', () => {
     document.body.insertAdjacentHTML('beforeend', previewHTML);
 
     // --- 1. 数据 ---
-    const DB_KEY = 'pepe_v57_fixed_layout';
+    const DB_KEY = 'pepe_v59_final_fix';
     const CHUNK_SIZE = 12 * 1024;
     let db, socket, activeChatId;
     let activeDownloads = {}, isSending = false, cancelFlag = {}, uploadQueue = [], globalAudio = null;
@@ -145,9 +134,10 @@ document.addEventListener('DOMContentLoaded', () => {
         document.getElementById('my-id-display').innerText = MY_ID;
         document.getElementById('my-nickname').innerText = db.profile.nickname;
         
-        let link = document.querySelector("link[rel*='icon']") || document.createElement('link');
-        link.type = 'image/png'; link.rel = 'apple-touch-icon'; link.href = './icon.png';
-        document.getElementsByTagName('head')[0].appendChild(link);
+        // ★ 修复：主页图标强制本地化 ★
+        const avatar = document.getElementById('my-avatar');
+        avatar.src = './icon.png';
+        avatar.onerror = () => { avatar.src = `https://api.dicebear.com/7.x/notionists/svg?seed=${db.profile.avatarSeed}`; };
 
         renderFriends();
         setupDialpad();
@@ -158,7 +148,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }, 500);
     };
 
-    // --- 3. 网络 ---
+    // --- 3. 网络 (Tunnel) ---
     if(!SERVER_URL.includes('onrender')) alert("Config URL!");
     else {
         socket = io(SERVER_URL, { reconnection: true, transports: ['websocket'] });
@@ -216,60 +206,71 @@ document.addEventListener('DOMContentLoaded', () => {
                 updateProgressUI(p.fileId, dl.receivedSize, dl.totalSize, spd);
                 dl.lastTime = now; dl.lastBytes = dl.receivedSize;
             }
-        } else if(p.subType === 'end') {
+        } 
+        else if(p.subType === 'end') {
             if(activeDownloads[p.fileId] === 'cancelled') return;
             const dl = activeDownloads[p.fileId];
             if(dl) {
                 const blob = b64toBlob(dl.chunks.join(''), dl.fileType);
                 const url = URL.createObjectURL(blob);
+                
                 let type = 'file';
                 if(dl.fileType.startsWith('image')) type = 'image';
                 else if(dl.fileType.startsWith('video')) type = 'video';
-                else if(dl.fileType.startsWith('audio')) type = 'voice';
-                
+                else if(dl.fileType.startsWith('audio')) type = 'file'; // 音频文件归为File卡片
+
                 const finalMsg = { type, content: url, fileName: dl.fileName, isSelf: false, ts: Date.now() };
+                
                 if(activeChatId === fid) replaceProgressWithContent(p.fileId, finalMsg);
                 
                 if(!db.history[fid]) db.history[fid] = [];
-                db.history[fid].push(finalMsg); saveDB(); // 存库
+                db.history[fid].push(finalMsg); saveDB();
                 
-                if(activeChatId !== fid && friend) { friend.unread = true; saveDB(); renderFriends(); }
+                if(activeChatId !== fid && friend) {
+                    friend.unread = true; saveDB(); renderFriends();
+                }
                 delete activeDownloads[p.fileId];
                 document.getElementById('success-sound').play().catch(()=>{});
             }
         }
     }
 
-    // --- 4. 发送逻辑 ---
+    // --- 4. 发送队列 ---
     function addToQueue(file) { uploadQueue.push(file); processQueue(); }
     function processQueue() { if(isSending || uploadQueue.length === 0) return; const file = uploadQueue.shift(); sendFileChunked(file); }
 
     function sendFileChunked(file) {
         if(!activeChatId || !socket.connected) { alert("Net Error"); return; }
         isSending = true;
+        
         const fileId = Date.now() + '-' + Math.random().toString(36).substr(2,9);
         const sendName = file.name || `file_${Date.now()}`;
         const sendType = file.type || 'application/octet-stream';
         const total = file.size;
+        
         cancelFlag[fileId] = false;
         appendProgressBubble(activeChatId, fileId, sendName, true);
         
         let offset=0, lastTime=Date.now(), lastBytes=0;
         const readNext = () => {
             if (cancelFlag[fileId] || !socket.connected) { isSending = false; setTimeout(processQueue, 500); return; }
+            
             if (offset >= total) {
                 socket.emit('send_private', { targetId: activeChatId, type: 'tunnel_file_packet', content: JSON.stringify({ subType: 'end', fileId }) });
+                
                 let type = 'file';
                 if(sendType.startsWith('image')) type = 'image';
                 else if(sendType.startsWith('video')) type = 'video';
-                else if(sendType.startsWith('audio')) type = 'voice';
+                else if(sendType.startsWith('audio')) type = 'file';
                 
                 const m = { type, content: URL.createObjectURL(file), fileName: sendName, isSelf: true, ts: Date.now() };
                 replaceProgressWithContent(fileId, m);
                 if(!db.history[activeChatId]) db.history[activeChatId] = [];
                 db.history[activeChatId].push(m); saveDB();
+                
                 isSending = false; setTimeout(processQueue, 300); return;
             }
+            
             const chunk = file.slice(offset, offset + CHUNK_SIZE);
             const r = new FileReader();
             r.onload = e => {
@@ -300,13 +301,15 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    // --- 5. 界面 ---
+    // --- 5. 界面交互 (核心修复区) ---
+    
     function openChat(id) {
         try{ if(window.speechSynthesis) window.speechSynthesis.cancel(); }catch(e){}
         activeChatId = id;
         const f = db.friends.find(x => x.id === id);
         document.getElementById('chat-partner-name').innerText = f ? (f.alias || f.id) : id;
         
+        // 强制重置
         document.getElementById('text-input-wrapper').classList.remove('hidden');
         document.getElementById('voice-record-btn').classList.remove('active');
         document.getElementById('mode-switch-btn').innerText = "🎤";
@@ -315,7 +318,7 @@ document.addEventListener('DOMContentLoaded', () => {
         view.classList.remove('right-sheet');
         view.classList.add('active');
         
-        // ★ 注入历史记录 (修复手势) ★
+        // ★ 核心修复：手势支持 ★
         window.history.pushState({ chat: true }, "");
         
         const box = document.getElementById('messages-container');
@@ -324,9 +327,9 @@ document.addEventListener('DOMContentLoaded', () => {
         msgs.forEach(m => appendMsgDOM(m));
     }
 
-    // ★ 修复：返回逻辑 ★
+    // ★ 核心修复：返回逻辑 (双重保险) ★
     window.goBack = () => {
-        // 如果有历史记录，走历史回退（触发手势动画）
+        // 如果有历史记录，则回退 (触发 popstate)
         if(history.state && history.state.chat) {
             history.back();
         } else {
@@ -334,15 +337,23 @@ document.addEventListener('DOMContentLoaded', () => {
             closeChatUI();
         }
     };
+    
     function closeChatUI() {
         const view = document.getElementById('view-chat');
         view.classList.remove('active');
         setTimeout(() => view.classList.add('right-sheet'), 300);
-        activeChatId = null; renderFriends();
+        activeChatId = null; 
+        renderFriends();
     }
+
+    // 监听浏览器手势
     window.addEventListener('popstate', () => {
-        if(document.getElementById('media-preview-modal').style.display!=='none') { window.closePreview(); return; }
-        closeChatUI();
+        const prev = document.getElementById('media-preview-modal');
+        if(!prev.classList.contains('hidden')) { window.closePreview(); return; }
+        
+        if(document.getElementById('view-chat').classList.contains('active')) {
+            closeChatUI();
+        }
     });
 
     function appendMsgDOM(msg) {
@@ -357,11 +368,13 @@ document.addEventListener('DOMContentLoaded', () => {
             html = `<div class="bubble audio-player"><span>🎤</span><button class="audio-btn" onclick="handleAudio('play','${msg.content}')">▶</button><button class="audio-btn" onclick="handleAudio('pause')">⏸</button><button class="audio-btn" onclick="handleAudio('stop')">⏹</button></div>`;
         } 
         else if(msg.type === 'image') html = `<div class="bubble clean"><div class="thumb-box" onclick="previewMedia('${msg.content}','image')"><img src="${msg.content}" class="thumb-img"></div></div>`;
-        else if(msg.type === 'video') html = `<div class="bubble clean"><div class="thumb-box" onclick="previewMedia('${msg.content}','video')"><video src="${msg.content}#t=0.1" class="thumb-img" preload="metadata" muted></video><div style="position:absolute;top:40%;left:45%;color:#fff;font-size:24px;">▶</div></div></div>`;
+        else if(msg.type === 'video') html = `<div class="bubble clean"><div class="thumb-box" onclick="previewMedia('${msg.content}','video')"><video src="${msg.content}#t=0.1" class="thumb-img" preload="metadata" muted></video><div style="position:absolute;top:40%;left:45%;color:#fff;font-size:30px;">▶</div></div></div>`;
         else if(msg.type === 'file') {
             let icon = '📄';
             if(msg.fileName.match(/\.(doc|docx)$/i)) icon='📝';
             else if(msg.fileName.match(/\.(xls|xlsx)$/i)) icon='📊';
+            else if(msg.fileName.match(/\.(ppt|pptx)$/i)) icon='📉';
+            else if(msg.fileName.match(/\.(mp3|wav|m4a)$/i)) icon='🎵';
             html = `<div class="bubble clean"><a class="doc-card" href="${msg.content}" download="${msg.fileName}"><div class="doc-icon">${icon}</div><div class="doc-info"><div class="doc-name">${msg.fileName}</div><div class="doc-type">CLICK SAVE</div></div></a></div>`;
         }
         div.innerHTML = html; box.appendChild(div); box.scrollTop = box.scrollHeight;
@@ -384,14 +397,20 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     function b64toBlob(b,t) { try{ const bin=atob(b); const a=new Uint8Array(bin.length); for(let i=0;i<bin.length;i++) a[i]=bin.charCodeAt(i); return new Blob([a],{type:t}); }catch(e){ return new Blob([],{type:t}); } }
 
-    // --- 6. 绑定 ---
-    // ★ 修复：发送文本 ★
-    const handleSend = () => { const t=document.getElementById('chat-input'); if(t.value.trim()){ sendData('text', t.value); t.value=''; }};
-    document.getElementById('chat-send-btn').onclick = handleSend;
-    document.getElementById('chat-send-btn').ontouchstart = handleSend; // 移动端增强
+    // --- 6. 事件绑定 (★ 修复：发送文本逻辑 ★) ---
+    const handleSend = (e) => {
+        if(e) e.preventDefault();
+        const t = document.getElementById('chat-input');
+        if(t.value.trim()){ sendData('text', t.value); t.value=''; }
+    };
+    const sendBtn = document.getElementById('chat-send-btn');
+    // 双重绑定确保响应
+    sendBtn.onclick = handleSend;
+    sendBtn.ontouchstart = handleSend;
+    
     document.getElementById('chat-input').addEventListener('keypress', e=>{if(e.key==='Enter') handleSend();});
     
-    // ★ 修复：返回键 ★
+    // 返回按钮
     document.getElementById('chat-back-btn').onclick = window.goBack;
 
     document.getElementById('mode-switch-btn').onclick = () => {
@@ -416,19 +435,20 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
+    // 拨号盘
     let dialInput = "";
     const setupDialpad = () => {
-        document.querySelector('#add-overlay .modal-body').innerHTML = `<div class="numpad-container"><div id="dial-display" class="id-display-screen">____</div><div class="numpad-grid"><div class="num-btn" onclick="dial(1)">1</div><div class="num-btn" onclick="dial(2)">2</div><div class="num-btn" onclick="dial(3)">3</div><div class="num-btn" onclick="dial(4)">4</div><div class="num-btn" onclick="dial(5)">5</div><div class="num-btn" onclick="dial(6)">6</div><div class="num-btn" onclick="dial(7)">7</div><div class="num-btn" onclick="dial(8)">8</div><div class="num-btn" onclick="dial(9)">9</div><div class="num-btn clear" onclick="dial('C')">C</div><div class="num-btn" onclick="dial(0)">0</div><div class="num-btn connect" onclick="dial('OK')">🤝</div></div></div>`;
+        const b = document.querySelector('#add-overlay .modal-body');
+        b.innerHTML = `<div class="numpad-container"><div id="dial-display" class="id-display-screen">____</div><div class="numpad-grid"><div class="num-btn" onclick="dial(1)">1</div><div class="num-btn" onclick="dial(2)">2</div><div class="num-btn" onclick="dial(3)">3</div><div class="num-btn" onclick="dial(4)">4</div><div class="num-btn" onclick="dial(5)">5</div><div class="num-btn" onclick="dial(6)">6</div><div class="num-btn" onclick="dial(7)">7</div><div class="num-btn" onclick="dial(8)">8</div><div class="num-btn" onclick="dial(9)">9</div><div class="num-btn clear" onclick="dial('C')">C</div><div class="num-btn" onclick="dial(0)">0</div><div class="num-btn connect" onclick="dial('OK')">🤝</div></div></div>`;
     };
     window.dial = k => {
         const d = document.getElementById('dial-display');
         if(k==='C') { dialInput=""; d.innerText="____"; return; }
         if(k==='OK') { 
             if(dialInput.length===4 && dialInput!==MY_ID) { 
-                const target = dialInput;
                 window.closeAllModals();
-                if(!db.friends.find(f=>f.id===target)) { db.friends.push({id:target, addedAt:Date.now(), alias:`User ${target}`}); saveDB(); renderFriends(); }
-                setTimeout(() => openChat(target), 50);
+                if(!db.friends.find(f=>f.id===dialInput)) { db.friends.push({id:dialInput, addedAt:Date.now(), alias:`User ${dialInput}`}); saveDB(); renderFriends(); }
+                setTimeout(() => openChat(dialInput), 50);
                 dialInput=""; d.innerText="____";
             } else alert("Invalid"); return; 
         }
@@ -477,11 +497,6 @@ document.addEventListener('DOMContentLoaded', () => {
     window.editContactAlias = (fid) => { const f=db.friends.find(x=>x.id===fid); if(f) { const n=prompt("Alias:", f.alias||f.id); if(n){ f.alias=n; saveDB(); renderFriends(); } } };
     document.querySelector('.chat-user-info').onclick = window.editFriendName;
 
-    function handleAddFriend(id) {
-        if(id === MY_ID) return;
-        if(!db.friends.find(f => f.id === id)) { db.friends.push({ id: id, addedAt: Date.now(), alias: `User ${id}`, unread: false }); saveDB(); renderFriends(); }
-        openChat(id);
-    }
     function renderFriends() {
         const list = document.getElementById('friends-list-container'); list.innerHTML='';
         db.friends.forEach(f => {
