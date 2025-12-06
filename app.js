@@ -12,6 +12,8 @@ document.addEventListener('DOMContentLoaded', () => {
         .scroll-content { padding-bottom: 30px !important; }
         .k-list-item { background: #fff; border-radius: 14px; padding: 14px; margin-bottom: 10px; box-shadow: var(--shadow-sm); transition: transform 0.1s; }
         .k-list-item:active { transform: scale(0.98); background: #f2f2f2; }
+        
+        /* 拨号盘 */
         .numpad-container { display: flex; flex-direction: column; align-items: center; padding: 10px; }
         .id-display-screen { font-size: 36px; font-weight: 800; letter-spacing: 6px; color: var(--primary); margin-bottom: 20px; border-bottom: 2px solid #eee; width: 80%; text-align: center; height: 50px; line-height: 50px; }
         .numpad-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 15px; width: 100%; max-width: 260px; }
@@ -20,12 +22,20 @@ document.addEventListener('DOMContentLoaded', () => {
         .num-btn.clear { color: var(--danger); font-size: 18px; }
         .num-btn.connect { background: var(--primary); color: #fff; border: none; box-shadow: 0 4px 10px rgba(89, 188, 16, 0.3); font-size: 30px; }
         .num-btn.connect:active { background: var(--primary-dark); }
+
+        /* 气泡与媒体 */
         .bubble { border: none !important; border-radius: 18px !important; padding: 10px 14px; box-shadow: 0 1px 2px rgba(0,0,0,0.1); max-width: 80%; }
         .msg-row.self .bubble { background: var(--primary); color: #fff; }
         .msg-row.other .bubble { background: #fff; color: #000; }
-        .thumb-box { position: relative; display: inline-block; max-width: 200px; border-radius: 12px; overflow: hidden; }
+        
+        /* 图片/视频缩略图修复 */
+        .thumb-box { position: relative; display: inline-block; max-width: 200px; border-radius: 12px; overflow: hidden; background: #000; }
         .thumb-img { max-width: 100%; height: auto; display: block; object-fit: contain; }
+        /* 视频缩略图特殊处理 */
+        video.thumb-img { object-fit: cover; max-height: 200px; }
+        
         .sticker-img { width: 80px !important; height: 80px !important; object-fit: contain !important; }
+        
         .voice-bubble { display: flex; align-items: center; gap: 8px; min-width: 100px; }
         .wave-visual { display: flex; align-items: center; gap: 3px; height: 16px; }
         .wave-bar { width: 3px; height: 30%; background: #ccc; border-radius: 2px; }
@@ -34,6 +44,7 @@ document.addEventListener('DOMContentLoaded', () => {
         @keyframes wave { 0%,100%{height:30%;} 50%{height:100%;} }
         .voice-bubble.playing .wave-bar:nth-child(2) { animation-delay: 0.1s; }
         .voice-bubble.playing .wave-bar:nth-child(3) { animation-delay: 0.2s; }
+
         .cancel-btn { position: absolute; top:5px; right:5px; background:rgba(0,0,0,0.6); color:#fff; width:22px; height:22px; border-radius:50%; text-align:center; line-height:22px; font-size:12px; cursor:pointer; z-index:10; }
         .modal-overlay { z-index: 100000 !important; background: rgba(0,0,0,0.6) !important; backdrop-filter: blur(5px); }
         .modal-header { background: var(--primary) !important; color: #fff; border:none; }
@@ -52,10 +63,19 @@ document.addEventListener('DOMContentLoaded', () => {
     </div>`;
     document.body.insertAdjacentHTML('beforeend', previewModalHTML);
 
-    // --- 1. 数据层 ---
-    const DB_KEY = 'pepe_v38_priority_fix';
+    // --- 1. 数据与全局变量 (Scope Fix) ---
+    const DB_KEY = 'pepe_v39_scope_fix';
     const CHUNK_SIZE = 12 * 1024;
     let db;
+    
+    // 全局状态 (必须在顶层定义)
+    let socket = null;
+    let activeChatId = null;
+    let activeDownloads = {};
+    let isSending = false;
+    let cancelFlag = {};
+    let uploadQueue = [];
+
     try {
         db = JSON.parse(localStorage.getItem(DB_KEY));
         if(!db || !db.profile) throw new Error("Reset");
@@ -66,9 +86,91 @@ document.addEventListener('DOMContentLoaded', () => {
     const saveDB = () => localStorage.setItem(DB_KEY, JSON.stringify(db));
     const MY_ID = db.profile.id;
 
-    // --- 2. 核心 UI 函数 (★ 提前定义，防止 undefined ★) ---
-    
-    // 渲染好友列表
+    // --- 2. 核心功能函数 (提升到顶层) ---
+
+    // 渲染消息
+    const appendMsgDOM = (msg, isSelf) => {
+        const box = document.getElementById('messages-container');
+        const div = document.createElement('div'); 
+        div.className = `msg-row ${isSelf?'self':'other'}`;
+        const uid = Date.now() + Math.random().toString().substr(2,5); 
+        let html = '';
+
+        if(msg.type==='text') {
+            html=`<div class="bubble">${msg.content}</div>`;
+        } 
+        else if(msg.type==='sticker') {
+            // 表情点击修复
+            html=`<div style="padding:5px;"><img src="${msg.content}" class="sticker-img"></div>`;
+        }
+        else if(msg.type==='voice') {
+            html=`<div id="voice-${uid}" class="bubble voice-bubble ${isSelf?'self':'other'}" style="cursor:pointer;" onclick="playVoice('${msg.content}', 'voice-${uid}')">
+                    <span>▶ Voice</span>
+                    <div class="wave-visual"><div class="wave-bar"></div><div class="wave-bar"></div><div class="wave-bar"></div></div>
+                  </div>`;
+        } 
+        else if(msg.type==='image') {
+            html=`<div class="bubble" style="padding:4px; background:transparent; box-shadow:none;">
+                    <div class="thumb-box" onclick="previewMedia('${msg.content}','image')">
+                        <img src="${msg.content}" class="thumb-img">
+                    </div>
+                  </div>`;
+        } 
+        else if(msg.type==='video') {
+            // ★ 视频缩略图修复：使用 video 标签并预加载元数据 ★
+            html=`<div class="bubble" style="padding:4px; background:transparent; box-shadow:none;">
+                    <div class="thumb-box" onclick="previewMedia('${msg.content}','video')">
+                        <video src="${msg.content}#t=0.1" class="thumb-img" preload="metadata" muted></video>
+                        <div style="position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); color:#fff; font-size:30px; text-shadow:0 2px 4px rgba(0,0,0,0.5);">▶</div>
+                    </div>
+                  </div>`;
+        } 
+        else if(msg.type==='file') {
+            html=`<div class="bubble">📂 ${msg.fileName}<br><a href="${msg.content}" download="${msg.fileName}" style="text-decoration:underline; font-weight:bold;">Download</a></div>`;
+        }
+        
+        div.innerHTML = html; 
+        box.appendChild(div); 
+        box.scrollTop = box.scrollHeight;
+    };
+
+    // 发送数据 (提升到顶层，供所有按钮调用)
+    const sendData = (type, content) => {
+        if(!activeChatId) { alert("Open chat first!"); return; }
+        if(socket && socket.connected) {
+            socket.emit('send_private', { targetId: activeChatId, content, type });
+        } else {
+            alert("Connecting..."); return;
+        }
+        const msgObj = { type, content, isSelf: true, ts: Date.now() };
+        if(!db.history[activeChatId]) db.history[activeChatId] = [];
+        db.history[activeChatId].push(msgObj); 
+        saveDB(); 
+        appendMsgDOM(msgObj, true);
+    };
+
+    // 打开聊天
+    const openChat = (id) => {
+        try { if('speechSynthesis' in window) window.speechSynthesis.cancel(); } catch(e){}
+
+        activeChatId = id; 
+        const f = db.friends.find(x => x.id === id);
+        document.getElementById('chat-partner-name').innerText = f ? (f.alias || f.id) : id;
+        document.getElementById('chat-online-dot').className = "status-dot red"; // 默认红
+        
+        const chatView = document.getElementById('view-chat');
+        chatView.classList.remove('right-sheet');
+        chatView.classList.add('active');
+        
+        window.history.pushState({ chatOpen: true, id: id }, "");
+
+        const container = document.getElementById('messages-container'); 
+        container.innerHTML = '';
+        const msgs = db.history[id] || []; 
+        msgs.forEach(m => appendMsgDOM(m, m.isSelf));
+    };
+
+    // 渲染好友
     const renderFriends = () => {
         const list = document.getElementById('friends-list-container');
         if(!list) return;
@@ -95,71 +197,7 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     };
 
-    // 渲染消息气泡
-    const appendMsgDOM = (msg, isSelf) => {
-        const box = document.getElementById('messages-container');
-        const div = document.createElement('div'); 
-        div.className = `msg-row ${isSelf?'self':'other'}`;
-        const uid = Date.now() + Math.random().toString().substr(2,5); 
-        let html = '';
-
-        if(msg.type==='text') {
-            html=`<div class="bubble">${msg.content}</div>`;
-        } 
-        else if(msg.type==='sticker') {
-            html=`<div style="padding:5px;"><img src="${msg.content}" class="sticker-img" style="width:80px; height:80px; object-fit:contain;"></div>`;
-        }
-        else if(msg.type==='voice') {
-            html=`<div id="voice-${uid}" class="bubble voice-bubble ${isSelf?'self':'other'}" style="cursor:pointer;" onclick="playVoice('${msg.content}', 'voice-${uid}')">
-                    <span>▶ Voice</span>
-                    <div class="wave-visual"><div class="wave-bar"></div><div class="wave-bar"></div><div class="wave-bar"></div></div>
-                  </div>`;
-        } 
-        else if(msg.type==='image') {
-            html=`<div class="bubble" style="padding:4px; background:transparent; box-shadow:none;">
-                    <div class="thumb-box" onclick="previewMedia('${msg.content}','image')">
-                        <img src="${msg.content}" class="thumb-img">
-                    </div>
-                  </div>`;
-        } 
-        else if(msg.type==='video') {
-            html=`<div class="bubble" style="padding:4px; background:transparent; box-shadow:none;">
-                    <div class="thumb-box" style="background:#000; min-width:120px; min-height:80px; display:flex; align-items:center; justify-content:center;" onclick="previewMedia('${msg.content}','video')">
-                        <span style="color:#fff; font-size:24px;">▶</span>
-                    </div>
-                  </div>`;
-        } 
-        else if(msg.type==='file') {
-            html=`<div class="bubble">📂 ${msg.fileName}<br><a href="${msg.content}" download="${msg.fileName}" style="text-decoration:underline;">Download</a></div>`;
-        }
-        
-        div.innerHTML = html; 
-        box.appendChild(div); 
-        box.scrollTop = box.scrollHeight;
-    };
-
-    // 打开聊天窗口
-    const openChat = (id) => {
-        try { if('speechSynthesis' in window) window.speechSynthesis.cancel(); } catch(e){}
-
-        activeChatId = id; 
-        const f = db.friends.find(x => x.id === id);
-        document.getElementById('chat-partner-name').innerText = f ? (f.alias || f.id) : id;
-        document.getElementById('chat-online-dot').className = "status-dot red";
-        
-        const chatView = document.getElementById('view-chat');
-        chatView.classList.remove('right-sheet');
-        chatView.classList.add('active');
-        
-        window.history.pushState({ chatOpen: true, id: id }, "");
-
-        const container = document.getElementById('messages-container'); 
-        container.innerHTML = '';
-        const msgs = db.history[id] || []; 
-        msgs.forEach(m => appendMsgDOM(m, m.isSelf));
-    };
-
-    // 添加好友核心逻辑
+    // 添加好友
     const handleAddFriend = (id) => {
         if(id === MY_ID) return;
         if(!db.friends.find(f => f.id === id)) {
@@ -169,9 +207,8 @@ document.addEventListener('DOMContentLoaded', () => {
         openChat(id);
     };
 
-    // --- 3. 拨号盘逻辑 (★ 确保调用 handleAddFriend 时它已定义 ★) ---
+    // --- 3. 拨号盘逻辑 ---
     let dialInput = "";
-    
     const setupDialpad = () => {
         const modalBody = document.querySelector('#add-overlay .modal-body');
         if (modalBody) {
@@ -192,24 +229,18 @@ document.addEventListener('DOMContentLoaded', () => {
     
     window.dial = (key) => {
         const display = document.getElementById('dial-display');
-        
-        // 清除
         if (key === 'C') { dialInput = ""; display.innerText = "____"; return; }
-        
-        // ★ 确认连接
         if (key === 'OK') {
             if (dialInput.length === 4) {
                 if (dialInput === MY_ID) { alert("Cannot add yourself!"); return; }
                 try {
-                    handleAddFriend(dialInput); // 此时 handleAddFriend 必定已定义
+                    handleAddFriend(dialInput); 
                     window.closeAllModals(); 
                     dialInput = ""; display.innerText = "____";
                 } catch(e) { alert("Err: " + e.message); }
-            } else { alert("Please enter 4 digits"); }
+            } else { alert("Enter 4 digits"); }
             return;
         }
-        
-        // 输入数字
         if (dialInput.length < 4 && typeof key === 'number') {
             dialInput += key;
             display.innerText = dialInput.padEnd(4, '_');
@@ -229,19 +260,17 @@ document.addEventListener('DOMContentLoaded', () => {
     renderProfile();
     setupDialpad();
 
-    // --- 4. 网络与传输 (保持隧道+队列逻辑) ---
-    let socket = null;
-    let activeChatId = null; // 注意：此处覆盖了前面的定义，但都在同一作用域，无妨
-    let activeDownloads = {};
-    let isSending = false;
-    let cancelFlag = {};
-    let uploadQueue = [];
-
+    // --- 4. 网络层 (隧道+队列) ---
     if(!SERVER_URL.includes('onrender')) alert("Configure SERVER_URL!");
     else {
         socket = io(SERVER_URL, { reconnection: true, transports: ['websocket'], upgrade: false });
+        
         const registerSocket = () => { if(socket.connected) socket.emit('register', MY_ID); };
-        socket.on('connect', () => { document.getElementById('conn-status').className = "status-dot green"; registerSocket(); isSending = false; processQueue(); });
+        
+        socket.on('connect', () => {
+            document.getElementById('conn-status').className = "status-dot green";
+            registerSocket(); isSending = false; processQueue();
+        });
         socket.on('disconnect', () => { document.getElementById('conn-status').className = "status-dot red"; isSending = false; });
         document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') { if (socket.disconnected) socket.connect(); else registerSocket(); } });
 
@@ -367,7 +396,6 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function traverseFileTree(item, path) {
-        path = path || "";
         if (item.isFile) { item.file(function(file) { addToQueue(file); }); } 
         else if (item.isDirectory) {
             var dirReader = item.createReader();
@@ -415,6 +443,48 @@ document.addEventListener('DOMContentLoaded', () => {
         if(row) { row.remove(); appendMsgDOM(msg, msg.isSelf); }
     }
 
+    // --- 事件绑定 ---
+    
+    // ★ 修复：发送文本事件 ★
+    const handleSend = () => {
+        const t = document.getElementById('chat-input');
+        if(t.value.trim()) { sendData('text', t.value); t.value=''; }
+    };
+    document.getElementById('chat-send-btn').onclick = handleSend;
+    // 回车发送
+    document.getElementById('chat-input').addEventListener('keypress', (e) => {
+        if(e.key === 'Enter') handleSend();
+    });
+
+    // ★ 修复：返回事件 ★
+    window.goBack = () => { 
+        if(activeChatId) window.history.back(); 
+    };
+    window.addEventListener('popstate', () => {
+        const preview = document.getElementById('media-preview-modal');
+        if(!preview.classList.contains('hidden')) { window.closePreview(); return; }
+        
+        document.getElementById('view-chat').classList.remove('active');
+        setTimeout(() => document.getElementById('view-chat').classList.add('right-sheet'), 300);
+        activeChatId = null; 
+        renderFriends();
+    });
+
+    // ★ 修复：昵称修改 ★
+    window.editMyName = () => { 
+        const n = prompt("New Name:", db.profile.nickname); 
+        if(n) { db.profile.nickname=n; saveDB(); renderProfile(); } 
+    };
+    window.editFriendName = () => { 
+        if(activeChatId) { 
+            const f=db.friends.find(x=>x.id===activeChatId); const n=prompt("Set Alias:", f.alias||f.id); 
+            if(n){ f.alias=n; saveDB(); document.getElementById('chat-partner-name').innerText=n; renderFriends(); } 
+        } 
+    };
+    // 绑定到名字区域
+    document.querySelector('.user-pill').onclick = window.editMyName;
+    document.querySelector('.chat-user-info').onclick = window.editFriendName;
+
     // 录音
     const vBtn = document.getElementById('voice-record-btn');
     let rec, chunks;
@@ -443,24 +513,6 @@ document.addEventListener('DOMContentLoaded', () => {
     vBtn.addEventListener('mousedown', startR); vBtn.addEventListener('mouseup', stopR);
     vBtn.addEventListener('touchstart', startR); vBtn.addEventListener('touchend', stopR);
 
-    // 文本发送
-    const handleSend = () => {
-        const t = document.getElementById('chat-input');
-        if(t.value.trim()) { sendData('text', t.value); t.value=''; }
-    };
-    document.getElementById('chat-send-btn').onclick = handleSend;
-    document.getElementById('chat-input').addEventListener('keypress', (e) => { if(e.key === 'Enter') handleSend(); });
-
-    // 历史返回
-    window.goBack = () => { if (activeChatId) window.history.back(); };
-    window.addEventListener('popstate', () => {
-        const preview = document.getElementById('media-preview-modal');
-        if(!preview.classList.contains('hidden')) { window.closePreview(); return; }
-        document.getElementById('view-chat').classList.remove('active');
-        setTimeout(() => document.getElementById('view-chat').classList.add('right-sheet'), 300);
-        activeChatId = null; renderFriends();
-    });
-
     // 拖拽
     const drag = document.getElementById('drag-overlay');
     window.addEventListener('dragenter', () => { if(activeChatId) drag.classList.remove('hidden'); });
@@ -478,7 +530,6 @@ document.addEventListener('DOMContentLoaded', () => {
         } else if(e.dataTransfer.files[0]) addToQueue(e.dataTransfer.files[0]);
     });
 
-    // 按钮
     document.getElementById('add-id-btn').onclick = () => { document.getElementById('add-overlay').classList.remove('hidden'); dialInput=""; document.getElementById('dial-display').innerText="____"; };
     document.getElementById('scan-btn').onclick = () => {
         document.getElementById('qr-overlay').classList.remove('hidden');
@@ -501,6 +552,7 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('file-btn').onclick = () => document.getElementById('chat-file-input').click();
     document.getElementById('chat-file-input').onchange = e => { if(e.target.files[0]) addToQueue(e.target.files[0]); };
     
+    // ★ 修复：表情发送逻辑 ★
     const sGrid = document.getElementById('sticker-grid');
     sGrid.innerHTML = '';
     for(let i=0; i<12; i++) {
@@ -508,7 +560,14 @@ document.addEventListener('DOMContentLoaded', () => {
         img.src = `https://api.dicebear.com/7.x/fun-emoji/svg?seed=${i*13}&backgroundColor=transparent`;
         img.className='sticker-item'; 
         img.style.cssText = "width:60px; height:60px; object-fit:contain; cursor:pointer;";
-        img.onclick = () => { if(activeChatId) { sendData('sticker', img.src); document.getElementById('sticker-panel').classList.add('hidden'); } };
+        img.onclick = () => { 
+            if(activeChatId) { 
+                sendData('sticker', img.src); 
+                document.getElementById('sticker-panel').classList.add('hidden'); 
+            } else {
+                alert("Open a chat first");
+            }
+        };
         sGrid.appendChild(img);
     }
     document.getElementById('sticker-btn').onclick = () => document.getElementById('sticker-panel').classList.toggle('hidden');
@@ -528,14 +587,7 @@ document.addEventListener('DOMContentLoaded', () => {
     window.closePreview = () => { document.getElementById('media-preview-modal').classList.add('hidden'); document.getElementById('media-preview-modal').style.display='none'; };
     window.playVoice = (url, id) => { const a = new Audio(url); a.play(); const b = document.getElementById(id); if(b) { b.classList.add('playing'); a.onended=()=>b.classList.remove('playing'); } };
     
-    window.editFriendName = () => { 
-        if(activeChatId) { 
-            const f=db.friends.find(x=>x.id===activeChatId); const n=prompt("Set Alias:", f.alias||f.id); 
-            if(n){ f.alias=n; saveDB(); document.getElementById('chat-partner-name').innerText=n; renderFriends(); } 
-        } 
-    };
-    document.querySelector('.chat-user-info').onclick = window.editFriendName;
-
+    // 初始化
     renderFriends(); 
     document.body.addEventListener('click', () => { document.getElementById('msg-sound').load(); }, {once:true});
 });
