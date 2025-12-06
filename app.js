@@ -3,7 +3,29 @@ document.addEventListener('DOMContentLoaded', () => {
     // ★★★ 请填入你的 Render 地址 ★★★
     const SERVER_URL = 'https://wojak-backend.onrender.com';
 
-    // --- 0. 动态注入预览模态框 (解决无法修改HTML的问题) ---
+    // --- 0. 动态注入样式与预览模态框 ---
+    
+    // 注入 CSS (解决语音波纹、图片尺寸、样式问题)
+    const styleSheet = document.createElement("style");
+    styleSheet.innerText = `
+        /* 语音播放动画 */
+        @keyframes wave-anim {
+            0% { transform: scaleY(1); opacity: 1; }
+            50% { transform: scaleY(1.5); opacity: 0.7; }
+            100% { transform: scaleY(1); opacity: 1; }
+        }
+        .voice-playing .wave-bar { animation: wave-anim 0.5s infinite ease-in-out; background-color: #59BC10 !important; }
+        .wave-visual { display: flex; align-items: center; gap: 2px; height: 15px; margin-left: 8px; }
+        .wave-bar { width: 3px; height: 100%; background-color: #333; border-radius: 2px; }
+        .wave-bar:nth-child(2) { height: 60%; }
+        .wave-bar:nth-child(3) { height: 80%; }
+        
+        /* 图片预览缩略图限制 (缩小50%) */
+        .thumb-img { max-width: 80px; max-height: 80px; object-fit: cover; border-radius: 6px; display: block; }
+        .bubble { position: relative; max-width: 80%; }
+    `;
+    document.head.appendChild(styleSheet);
+
     const previewModalHTML = `
     <div id="media-preview-modal" class="modal-overlay hidden" style="background:#000; z-index:9999; display:none;">
         <button onclick="closePreview()" style="position:absolute; top:40px; right:20px; z-index:10000; background:rgba(255,255,255,0.2); color:#fff; border:none; width:40px; height:40px; border-radius:50%; font-size:20px;">✕</button>
@@ -13,12 +35,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // --- 1. 全局变量与工具 ---
     const DB_KEY = 'pepe_v33_final';
-    
-    // 文件传输相关变量
     const CHUNK_SIZE = 16 * 1024; // 16KB 切片
-    const activeTransfers = {}; // 存储正在传输/接收的文件块
+    const activeTransfers = {}; // 存储传输任务
     
-    // 预览相关逻辑
+    // 预览逻辑
     window.previewMedia = (url, type) => {
         const modal = document.getElementById('media-preview-modal');
         const container = document.getElementById('preview-container');
@@ -28,8 +48,9 @@ document.addEventListener('DOMContentLoaded', () => {
         if(type === 'image') {
             el = document.createElement('img');
             el.src = url;
-            el.style.maxWidth = '100%';
-            el.style.maxHeight = '100%';
+            el.style.width = '100%';
+            el.style.height = 'auto';
+            el.style.maxHeight = '100vh';
             el.style.objectFit = 'contain';
         } else if(type === 'video') {
             el = document.createElement('video');
@@ -37,14 +58,13 @@ document.addEventListener('DOMContentLoaded', () => {
             el.controls = true;
             el.autoplay = true;
             el.style.maxWidth = '100%';
-            el.style.maxHeight = '100%';
+            el.style.maxHeight = '100vh';
         }
         
         if(el) {
             container.appendChild(el);
             modal.classList.remove('hidden');
             modal.style.display = 'flex';
-            // 利用 History API 防止安卓/iOS 手势直接退出 APP
             window.history.pushState({preview: true}, "");
         }
     };
@@ -55,14 +75,12 @@ document.addEventListener('DOMContentLoaded', () => {
             modal.classList.add('hidden');
             modal.style.display = 'none';
             document.getElementById('preview-container').innerHTML = '';
-            // 如果历史栈顶是预览状态，则回退
             if(window.history.state && window.history.state.preview) {
                 window.history.back();
             }
         }
     };
     
-    // 监听浏览器的返回事件 (物理返回键/侧滑)
     window.addEventListener('popstate', (e) => {
         const modal = document.getElementById('media-preview-modal');
         if(!modal.classList.contains('hidden')) {
@@ -72,7 +90,21 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
-    // 基础窗口控制
+    // 播放语音并控制特效
+    window.playVoice = (audioUrl, elementId) => {
+        const container = document.getElementById(elementId);
+        // 停止其他正在播放的
+        document.querySelectorAll('audio').forEach(a => { a.pause(); a.currentTime = 0; });
+        document.querySelectorAll('.voice-bubble').forEach(b => b.classList.remove('voice-playing'));
+
+        const audio = new Audio(audioUrl);
+        container.classList.add('voice-playing');
+        audio.play().catch(e => alert("Play error: " + e));
+        audio.onended = () => {
+            container.classList.remove('voice-playing');
+        };
+    };
+
     window.closeAllModals = () => {
         document.querySelectorAll('.modal-overlay').forEach(e => {
             if(e.id !== 'media-preview-modal') e.classList.add('hidden');
@@ -131,8 +163,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     renderFriends();
 
-    // --- 3. 核心功能实现 ---
-
+    // --- 3. 核心功能 ---
     function handleAddFriend(id) {
         if(id === MY_ID) return;
         if(!db.friends.find(f => f.id === id)) {
@@ -170,7 +201,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }, 300);
     };
 
-    // --- 4. 聊天、文件传输与网络 (重构版) ---
+    // --- 4. 聊天与文件传输 ---
     let socket = null;
     let activeChatId = null;
 
@@ -194,9 +225,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 renderFriends();
             }
 
-            // --- 传输层逻辑 ---
+            // --- 文件接收逻辑 (含实时速度) ---
             if (msg.type === 'file_start') {
-                // 初始化接收任务
                 activeTransfers[msg.fileId] = {
                     chunks: [],
                     totalSize: msg.totalSize,
@@ -204,29 +234,33 @@ document.addEventListener('DOMContentLoaded', () => {
                     startTime: Date.now(),
                     lastBytes: 0,
                     lastTime: Date.now(),
-                    fileName: msg.fileName,
-                    fileType: msg.fileType,
-                    meta: msg // 保存元数据
+                    fileName: msg.fileName, // ★ 确保保存原始文件名
+                    fileType: msg.fileType
                 };
-                // 立即在界面显示“接收中”气泡
                 if(activeChatId === fid) {
                     appendProgressBubble(fid, msg.fileId, msg.fileName, msg.fileType, false);
                 }
-                return; // 不存入历史，直到接收完成
+                return; 
             }
 
             if (msg.type === 'file_chunk') {
                 const transfer = activeTransfers[msg.fileId];
                 if(transfer) {
                     transfer.chunks.push(msg.chunk);
-                    transfer.receivedSize += msg.chunk.byteLength || (msg.chunk.length * 0.75); // Base64估算或Buffer
+                    // 估算Base64大小
+                    const chunkSize = msg.chunk.length * 0.75; 
+                    transfer.receivedSize += chunkSize;
                     
-                    // 计算速度
+                    // 实时速度计算 (每100ms更新一次，保证视觉流畅)
                     const now = Date.now();
-                    if(now - transfer.lastTime > 500) { // 每0.5秒更新一次UI
-                        const speed = ((transfer.receivedSize - transfer.lastBytes) / 1024) / ((now - transfer.lastTime)/1000);
+                    if(now - transfer.lastTime > 100) { 
+                        const bytesDiff = transfer.receivedSize - transfer.lastBytes;
+                        const timeDiff = (now - transfer.lastTime) / 1000;
+                        const speed = (bytesDiff / 1024) / timeDiff; // KB/s
+                        
                         transfer.lastBytes = transfer.receivedSize;
                         transfer.lastTime = now;
+                        
                         updateProgressUI(msg.fileId, transfer.receivedSize, transfer.totalSize, speed);
                     }
                 }
@@ -236,25 +270,24 @@ document.addEventListener('DOMContentLoaded', () => {
             if (msg.type === 'file_end') {
                 const transfer = activeTransfers[msg.fileId];
                 if(transfer) {
-                    // 接收完成，组装文件
                     const blob = b64toBlob(transfer.chunks.join(''), transfer.fileType);
                     const fileUrl = URL.createObjectURL(blob);
                     
                     // 构造最终消息对象
                     const finalMsg = {
                         type: isImage(transfer.fileType) ? 'image' : isVideo(transfer.fileType) ? 'video' : 'file',
-                        content: fileUrl, // 注意：Blob URL 刷新后会失效，持久化需要IndexedDB，此处按要求仅内存展示
-                        fileName: transfer.fileName,
+                        content: fileUrl, 
+                        fileName: transfer.fileName, // ★ 使用传递过来的文件名
                         isSelf: false,
                         ts: Date.now()
                     };
 
-                    // 更新UI把进度条变成实际内容
                     replaceProgressWithContent(msg.fileId, finalMsg);
                     
-                    // 存历史 (存占位符)
                     if(!db.history[fid]) db.history[fid] = [];
-                    db.history[fid].push({ ...finalMsg, content: '[File Saved]', type: 'text' });
+                    // 历史只存文本占位符
+                    const saveMsg = { ...finalMsg, content: '[File Saved]', type: 'text' };
+                    db.history[fid].push(saveMsg);
                     saveDB();
                     
                     delete activeTransfers[msg.fileId];
@@ -263,9 +296,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 return;
             }
 
-            // 普通文本消息
+            // 普通/表情消息
             if(!db.history[fid]) db.history[fid] = [];
-            db.history[fid].push({ type: msg.type, content: msg.content, isSelf: false, ts: msg.timestamp, fileName: msg.fileName });
+            db.history[fid].push({ type: msg.type, content: msg.content, isSelf: false, ts: msg.timestamp });
             saveDB();
             renderFriends();
 
@@ -274,14 +307,13 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    // --- 5. 文件切片发送逻辑 ---
+    // --- 5. 文件切片发送 ---
     function sendFileChunked(file) {
         if(!activeChatId || !socket) return;
         
         const fileId = Date.now() + '-' + Math.random().toString(36).substr(2, 9);
         const reader = new FileReader();
         
-        // 1. 发送开始信号
         socket.emit('send_private', {
             targetId: activeChatId,
             type: 'file_start',
@@ -291,25 +323,22 @@ document.addEventListener('DOMContentLoaded', () => {
             totalSize: file.size
         });
 
-        // UI: 显示发送进度条
         appendProgressBubble(activeChatId, fileId, file.name, file.type, true);
 
-        // 2. 读取并切片发送
         reader.readAsDataURL(file);
         reader.onload = () => {
-            const base64Data = reader.result.split(',')[1]; // 去掉 data:xxx;base64, 前缀
+            const base64Data = reader.result.split(',')[1];
             const totalChunks = Math.ceil(base64Data.length / CHUNK_SIZE);
             let currentChunk = 0;
             let lastUpdate = Date.now();
             let sentBytes = 0;
+            let lastBytes = 0;
 
             const sendLoop = setInterval(() => {
                 if(currentChunk >= totalChunks) {
                     clearInterval(sendLoop);
-                    // 发送结束信号
                     socket.emit('send_private', { targetId: activeChatId, type: 'file_end', fileId: fileId });
                     
-                    // 构造本地显示用的消息
                     const finalMsg = {
                         type: isImage(file.type) ? 'image' : isVideo(file.type) ? 'video' : 'file',
                         content: URL.createObjectURL(file),
@@ -318,7 +347,6 @@ document.addEventListener('DOMContentLoaded', () => {
                     };
                     replaceProgressWithContent(fileId, finalMsg);
                     
-                    // 存历史
                     if(!db.history[activeChatId]) db.history[activeChatId] = [];
                     db.history[activeChatId].push({ ...finalMsg, content: '[File Sent]', type: 'text' });
                     saveDB();
@@ -336,18 +364,17 @@ document.addEventListener('DOMContentLoaded', () => {
                 sentBytes += chunk.length;
                 currentChunk++;
 
-                // 计算发送速度
                 const now = Date.now();
-                if(now - lastUpdate > 500) {
-                    const speed = (CHUNK_SIZE / 1024) / ((now - lastUpdate)/1000); // KB/s
+                if(now - lastUpdate > 200) {
+                    const speed = ((sentBytes - lastBytes) / 1024) / ((now - lastUpdate)/1000);
                     updateProgressUI(fileId, currentChunk * CHUNK_SIZE, base64Data.length, speed);
                     lastUpdate = now;
+                    lastBytes = sentBytes;
                 }
-            }, 10); // 每10ms发送一片，避免阻塞主线程
+            }, 5); 
         };
     }
 
-    // 辅助函数
     function isImage(type) { return type && type.startsWith('image'); }
     function isVideo(type) { return type && type.startsWith('video'); }
     function b64toBlob(b64Data, contentType) {
@@ -364,7 +391,6 @@ document.addEventListener('DOMContentLoaded', () => {
         return new Blob(byteArrays, {type: contentType});
     }
 
-    // --- 6. 聊天 UI 渲染 ---
     function renderFriends() {
         const list = document.getElementById('friends-list-container');
         list.innerHTML = '';
@@ -396,13 +422,11 @@ document.addEventListener('DOMContentLoaded', () => {
         msgs.forEach(m => appendMsgDOM(m, m.isSelf));
     }
 
-    // 普通文本发送
     function sendData(type, content) {
         if(!activeChatId) return;
         if(socket && socket.connected) {
             socket.emit('send_private', { targetId: activeChatId, content, type });
         }
-        
         const msgObj = { type, content, isSelf: true, ts: Date.now() };
         if(!db.history[activeChatId]) db.history[activeChatId] = [];
         db.history[activeChatId].push(msgObj);
@@ -410,46 +434,58 @@ document.addEventListener('DOMContentLoaded', () => {
         appendMsgDOM(msgObj, true);
     }
 
-    // 渲染消息气泡
+    // ★ 核心渲染：处理各种消息类型 ★
     function appendMsgDOM(msg, isSelf) {
         const container = document.getElementById('messages-container');
         const div = document.createElement('div');
         div.className = `msg-row ${isSelf?'self':'other'}`;
-        
+        const uid = Date.now() + Math.random().toString().substr(2,5); // 生成唯一ID用于语音动画定位
+
         let html = '';
         if(msg.type === 'text') {
             html = `<div class="bubble">${msg.content}</div>`;
-        } else if (msg.type === 'voice') {
-            // 修复语音播放，添加点击播放逻辑
-            html = `<div class="bubble voice-bubble" style="cursor:pointer; display:flex; align-items:center; gap:5px; background:${isSelf?'#59BC10':'#fff'}; color:${isSelf?'#fff':'#000'}" onclick="this.querySelector('audio').play()">
-                        <span>▶ 🎤 Voice Msg</span>
-                        <audio src="${msg.content}"></audio>
+        } 
+        else if (msg.type === 'sticker') {
+            // ★ 修复表情不显示
+            html = `<div class="bubble" style="background:transparent; border:none; box-shadow:none;">
+                        <img src="${msg.content}" style="width:80px; height:80px;">
                     </div>`;
-        } else if (msg.type === 'image') {
-            // 图片：缩略图 + 预览眼
-            html = `<div class="bubble" style="padding:5px;">
-                        <div style="position:relative;">
-                            <img src="${msg.content}" style="max-width:150px; border-radius:8px;">
-                            <div style="position:absolute; bottom:5px; right:5px; background:rgba(0,0,0,0.6); border-radius:50%; width:30px; height:30px; display:flex; align-items:center; justify-content:center; cursor:pointer;"
+        }
+        else if (msg.type === 'voice') {
+            // ★ 修复语音播放 + 波纹动画
+            html = `<div id="voice-${uid}" class="bubble voice-bubble" style="cursor:pointer; display:flex; align-items:center; gap:5px; background:${isSelf?'#59BC10':'#fff'}; color:${isSelf?'#fff':'#000'}" onclick="playVoice('${msg.content}', 'voice-${uid}')">
+                        <span style="font-weight:bold;">▶ Voice</span>
+                        <div class="wave-visual">
+                            <div class="wave-bar"></div><div class="wave-bar"></div><div class="wave-bar"></div>
+                        </div>
+                    </div>`;
+        } 
+        else if (msg.type === 'image') {
+            // ★ 缩略图缩小50% + 接收端预览
+            html = `<div class="bubble" style="padding:4px;">
+                        <div style="position:relative; display:inline-block;">
+                            <img src="${msg.content}" class="thumb-img">
+                            <div style="position:absolute; bottom:0; right:0; background:rgba(0,0,0,0.6); width:24px; height:24px; border-top-left-radius:6px; display:flex; align-items:center; justify-content:center; cursor:pointer;"
                                  onclick="previewMedia('${msg.content}', 'image')">
-                                <span style="color:#fff; font-size:16px;">👁</span>
+                                <span style="color:#fff; font-size:14px;">👁</span>
                             </div>
                         </div>
                     </div>`;
-        } else if (msg.type === 'video') {
-            // 视频：缩略图 + 播放按钮
-            html = `<div class="bubble" style="padding:5px;">
-                        <div style="position:relative; width:150px; height:100px; background:#000; border-radius:8px; display:flex; align-items:center; justify-content:center;">
-                            <video src="${msg.content}" style="max-width:100%; max-height:100%; display:none;"></video>
-                            <div style="color:#fff; font-size:10px; position:absolute; bottom:2px; left:2px;">${msg.fileName||'Video'}</div>
-                            <div style="width:40px; height:40px; background:rgba(255,255,255,0.3); border-radius:50%; display:flex; align-items:center; justify-content:center; cursor:pointer;"
+        } 
+        else if (msg.type === 'video') {
+            html = `<div class="bubble" style="padding:4px;">
+                        <div style="position:relative; width:80px; height:60px; background:#000; border-radius:6px; display:flex; align-items:center; justify-content:center;">
+                            <div style="color:#fff; font-size:8px; position:absolute; bottom:2px; left:2px; max-width:100%; overflow:hidden; white-space:nowrap;">${msg.fileName||'Video'}</div>
+                            <div style="width:30px; height:30px; background:rgba(255,255,255,0.3); border-radius:50%; display:flex; align-items:center; justify-content:center; cursor:pointer;"
                                  onclick="previewMedia('${msg.content}', 'video')">
-                                <span style="color:#fff; font-size:24px;">▶</span>
+                                <span style="color:#fff; font-size:18px;">▶</span>
                             </div>
                         </div>
                     </div>`;
-        } else if (msg.type === 'file') {
-            html = `<div class="bubble">📂 ${msg.fileName}<br><a href="${msg.content}" download="${msg.fileName}">Download</a></div>`;
+        } 
+        else if (msg.type === 'file') {
+            // ★ 修复文件名显示
+            html = `<div class="bubble">📂 ${msg.fileName || 'File'}<br><a href="${msg.content}" download="${msg.fileName || 'download'}" style="text-decoration:underline;">Download</a></div>`;
         }
         
         div.innerHTML = html;
@@ -457,7 +493,6 @@ document.addEventListener('DOMContentLoaded', () => {
         container.scrollTop = container.scrollHeight;
     }
 
-    // 进度条气泡生成
     function appendProgressBubble(chatId, fileId, fileName, fileType, isSelf) {
         if(activeChatId !== chatId) return;
         const container = document.getElementById('messages-container');
@@ -465,10 +500,10 @@ document.addEventListener('DOMContentLoaded', () => {
         div.id = `progress-row-${fileId}`;
         div.className = `msg-row ${isSelf?'self':'other'}`;
         div.innerHTML = `
-            <div class="bubble" style="min-width:180px;">
-                <div style="font-weight:bold; font-size:12px; margin-bottom:5px;">${isSelf?'⬆ Uploading':'⬇ Receiving'} ${fileName}</div>
-                <div style="background:#ddd; height:6px; border-radius:3px; overflow:hidden; margin-bottom:5px;">
-                    <div id="bar-${fileId}" style="width:0%; height:100%; background:${isSelf?'#fff':'#59BC10'}; transition:width 0.2s;"></div>
+            <div class="bubble" style="min-width:160px; font-size:12px;">
+                <div style="font-weight:bold; margin-bottom:4px;">${isSelf?'⬆':'⬇'} ${fileName}</div>
+                <div style="background:#ddd; height:4px; border-radius:2px; overflow:hidden; margin-bottom:4px;">
+                    <div id="bar-${fileId}" style="width:0%; height:100%; background:${isSelf?'#fff':'#59BC10'}; transition:width 0.1s;"></div>
                 </div>
                 <div style="display:flex; justify-content:space-between; font-size:10px; opacity:0.8;">
                     <span id="speed-${fileId}">0 KB/s</span>
@@ -480,55 +515,50 @@ document.addEventListener('DOMContentLoaded', () => {
         container.scrollTop = container.scrollHeight;
     }
 
-    // 更新进度条 UI
     function updateProgressUI(fileId, current, total, speed) {
         const bar = document.getElementById(`bar-${fileId}`);
         const spd = document.getElementById(`speed-${fileId}`);
         const pct = document.getElementById(`pct-${fileId}`);
         if(bar && spd && pct) {
-            const percent = Math.floor((current / total) * 100);
+            const percent = Math.min(100, Math.floor((current / total) * 100));
             bar.style.width = `${percent}%`;
             pct.innerText = `${percent}%`;
-            spd.innerText = speed > 1024 ? `${(speed/1024).toFixed(1)} MB/s` : `${Math.floor(speed)} KB/s`;
+            // ★ 修复：动态显示 MB/s 或 KB/s
+            if (speed > 1024) spd.innerText = `${(speed/1024).toFixed(1)} MB/s`;
+            else spd.innerText = `${Math.floor(speed)} KB/s`;
         }
     }
 
-    // 传输完成后替换为真实内容
     function replaceProgressWithContent(fileId, msg) {
         const row = document.getElementById(`progress-row-${fileId}`);
         if(row) {
-            // 简单处理：移除进度条，重新append真实消息
             row.remove();
             appendMsgDOM(msg, msg.isSelf);
         }
     }
 
-    // --- 7. 交互事件 (修复输入/语音/文件) ---
-    
-    // A. 文本发送
+    // --- 6. 交互事件 ---
     document.getElementById('chat-send-btn').onclick = () => {
         const txt = document.getElementById('chat-input').value;
         if(txt) { sendData('text', txt); document.getElementById('chat-input').value=''; }
     };
     document.getElementById('chat-back-btn').onclick = window.goBack;
 
-    // B. 输入模式切换 (完全修复)
+    // ★ 模式切换 (修复：可来回切换)
     const modeSwitch = document.getElementById('mode-switch-btn');
     const voiceBtn = document.getElementById('voice-record-btn');
     const textWrapper = document.getElementById('text-input-wrapper');
-    let isVoiceMode = true; // 初始状态
+    let isVoiceMode = true; 
 
     modeSwitch.onclick = () => {
         isVoiceMode = !isVoiceMode;
         if(isVoiceMode) {
-            // 切换为语音模式
             textWrapper.classList.add('hidden');
             textWrapper.style.display = 'none';
             voiceBtn.classList.remove('hidden');
             voiceBtn.style.display = 'block';
             modeSwitch.innerText = "⌨️";
         } else {
-            // 切换为键盘模式
             voiceBtn.classList.add('hidden');
             voiceBtn.style.display = 'none';
             textWrapper.classList.remove('hidden');
@@ -538,7 +568,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     };
 
-    // C. 语音录制 (修复：使用 Touch 事件)
+    // 录音事件 (Touch)
     let mediaRecorder, audioChunks;
     const startRec = async (e) => {
         if(e) e.preventDefault();
@@ -552,7 +582,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 const reader = new FileReader(); 
                 reader.readAsDataURL(blob);
                 reader.onloadend = () => sendData('voice', reader.result);
-                // 停止流
                 stream.getTracks().forEach(track => track.stop());
             };
             mediaRecorder.start();
@@ -560,7 +589,6 @@ document.addEventListener('DOMContentLoaded', () => {
             voiceBtn.innerText="RECORDING...";
         } catch(e) { alert("Mic Error: " + e.message); }
     };
-
     const stopRec = (e) => {
         if(e) e.preventDefault();
         if(mediaRecorder && mediaRecorder.state !== 'inactive') { 
@@ -569,34 +597,27 @@ document.addEventListener('DOMContentLoaded', () => {
             voiceBtn.innerText="HOLD TO SPEAK"; 
         } 
     };
-    
-    // 绑定触摸事件 (移动端核心)
     voiceBtn.addEventListener('touchstart', startRec, {passive: false});
     voiceBtn.addEventListener('touchend', stopRec, {passive: false});
-    // 兼容PC调试
     voiceBtn.addEventListener('mousedown', startRec);
     voiceBtn.addEventListener('mouseup', stopRec);
 
-    // D. 文件上传 (修复：事件绑定)
+    // 文件上传
     const fileInput = document.getElementById('chat-file-input');
-    // 点击按钮触发 input
     document.getElementById('file-btn').onclick = () => fileInput.click();
-    // 监听 input 变化触发发送
     fileInput.onchange = (e) => {
         const file = e.target.files[0];
         if(file) {
-            sendFileChunked(file); // 使用切片发送
-            fileInput.value = ''; // 清空以允许重复上传同名文件
+            sendFileChunked(file); 
+            fileInput.value = '';
         }
     };
 
-    // Nickname & FM
     window.editMyName = () => { const n = prompt("New Name:", db.profile.nickname); if(n) { db.profile.nickname=n; saveDB(); document.getElementById('my-nickname').innerText=n; } };
     window.editFriendName = () => { if(activeChatId) { const f=db.friends.find(x=>x.id===activeChatId); const n=prompt("Rename:", f.alias||f.id); if(n){ f.alias=n; saveDB(); document.getElementById('chat-partner-name').innerText=n; renderFriends(); } } };
     const fm = document.getElementById('fm-radio');
     document.getElementById('fm-btn').onclick = () => { if(fm.paused) { fm.play(); alert("FM ON"); } else { fm.pause(); alert("FM OFF"); } };
 
-    // Stickers
     const sGrid = document.getElementById('sticker-grid');
     for(let i=0; i<12; i++) {
         const url = `https://api.dicebear.com/7.x/fun-emoji/svg?seed=${i*13}&backgroundColor=transparent`;
@@ -606,7 +627,6 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     document.getElementById('sticker-btn').onclick = () => document.getElementById('sticker-panel').classList.toggle('hidden');
 
-    // Drag
     const drag = document.getElementById('drag-overlay');
     window.addEventListener('dragenter', () => { if(activeChatId) drag.classList.remove('hidden'); });
     drag.addEventListener('dragleave', (e) => { if(e.target===drag) drag.classList.add('hidden'); });
@@ -615,7 +635,7 @@ document.addEventListener('DOMContentLoaded', () => {
         e.preventDefault(); 
         drag.classList.add('hidden'); 
         if(activeChatId && e.dataTransfer.files[0]) { 
-            sendFileChunked(e.dataTransfer.files[0]); // 拖拽也走切片
+            sendFileChunked(e.dataTransfer.files[0]); 
         } 
     });
 
