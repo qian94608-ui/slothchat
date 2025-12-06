@@ -3,7 +3,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // ★★★ 请填入你的 Render 地址 ★★★
     const SERVER_URL = 'https://wojak-backend.onrender.com';
 
-    // --- 0. 动态注入样式 ---
+    // --- 0. 动态样式 (保持不变) ---
     const styleSheet = document.createElement("style");
     styleSheet.innerText = `
         @keyframes wave { 0% { transform: scaleY(1); } 50% { transform: scaleY(2.5); background: #fff; } 100% { transform: scaleY(1); } }
@@ -17,7 +17,7 @@ document.addEventListener('DOMContentLoaded', () => {
         .voice-bubble.playing .wave-bar:nth-child(2) { animation-delay: 0.1s; }
         .voice-bubble.playing .wave-bar:nth-child(3) { animation-delay: 0.2s; }
         .voice-bubble.playing .wave-bar:nth-child(4) { animation-delay: 0.3s; }
-        .thumb-box { position: relative; display: inline-block; max-width: 120px; border-radius: 8px; overflow: hidden; }
+        .thumb-box { position: relative; display: inline-block; max-width: 120px; border-radius: 8px; overflow: hidden; background: #000; min-height: 40px; }
         .thumb-img { max-width: 100%; max-height: 120px; object-fit: cover; display: block; }
         .preview-eye { position: absolute; bottom: 0; right: 0; background: rgba(0,0,0,0.6); width: 30px; height: 30px; border-top-left-radius: 8px; display: flex; align-items: center; justify-content: center; cursor: pointer; }
         .bubble { max-width: 85%; word-break: break-word; }
@@ -35,7 +35,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // --- 1. 全局变量 ---
     const DB_KEY = 'pepe_v33_final';
-    const CHUNK_SIZE = 16 * 1024; 
+    const CHUNK_SIZE = 16 * 1024; // 16KB 切片
     const activeTransfers = {}; 
     
     // 预览逻辑
@@ -72,16 +72,18 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
-    // 语音播放 (修复：MIME类型支持)
+    // 语音播放
     window.playVoice = (audioUrl, elementId) => {
         document.querySelectorAll('audio').forEach(a => { a.pause(); a.currentTime = 0; });
         document.querySelectorAll('.voice-bubble').forEach(b => b.classList.remove('playing'));
         const bubble = document.getElementById(elementId);
         const audio = new Audio(audioUrl);
         if(bubble) bubble.classList.add('playing');
+        
         audio.play().catch(e => {
             console.error("Audio Play Error:", e);
-            alert("Playback failed. Format not supported.");
+            // 尝试静音播放以绕过自动播放策略，提示用户
+            alert("Playback error. Try tapping again. (Mac/iOS safety check)");
             if(bubble) bubble.classList.remove('playing');
         });
         audio.onended = () => { if(bubble) bubble.classList.remove('playing'); };
@@ -157,43 +159,33 @@ document.addEventListener('DOMContentLoaded', () => {
         }, 300);
     };
 
-    // --- 4. 聊天与网络 (★ 修复：连接保活与文件接收) ---
+    // --- 4. 聊天与网络 ---
     let socket = null;
     let activeChatId = null;
 
     if(!SERVER_URL.includes('onrender')) alert("Configure SERVER_URL!");
     else {
-        // ★ 修复1: 强制 Websocket + 自动重连配置
         socket = io(SERVER_URL, { 
             reconnection: true, 
             reconnectionAttempts: Infinity,
-            transports: ['websocket'] // 解决移动端轮询延迟
+            transports: ['websocket'] 
         });
         
-        const registerSocket = () => {
-            if(socket.connected) socket.emit('register', MY_ID);
-        };
+        const registerSocket = () => { if(socket.connected) socket.emit('register', MY_ID); };
 
         socket.on('connect', () => {
             document.getElementById('conn-status').className = "status-dot green";
-            registerSocket(); // 连接即注册
-        });
-
-        // ★ 修复3: 监听重连事件，防止握手失效
-        socket.on('reconnect', () => {
-            console.log("Reconnected");
             registerSocket();
         });
 
-        socket.on('disconnect', () => {
-            document.getElementById('conn-status').className = "status-dot red";
-        });
+        socket.on('reconnect', () => { registerSocket(); });
 
-        // ★ 修复1: 移动端唤醒后强制重连
+        socket.on('disconnect', () => { document.getElementById('conn-status').className = "status-dot red"; });
+
         document.addEventListener('visibilitychange', () => {
             if (document.visibilityState === 'visible') {
                 if (socket.disconnected) socket.connect();
-                else registerSocket(); // 确保活跃
+                else registerSocket();
             }
         });
 
@@ -211,10 +203,10 @@ document.addEventListener('DOMContentLoaded', () => {
                     receivedSize: 0,
                     startTime: Date.now(),
                     lastBytes: 0, lastTime: Date.now(),
-                    fileName: msg.fileName, // ★ 保持文件名
-                    fileType: msg.fileType  // ★ 保持类型 (包括语音的mimeType)
+                    fileName: msg.fileName || `file_${Date.now()}`, // 防止 undefined
+                    fileType: msg.fileType
                 };
-                if(activeChatId === fid) appendProgressBubble(fid, msg.fileId, msg.fileName, msg.fileType, false);
+                if(activeChatId === fid) appendProgressBubble(fid, msg.fileId, activeTransfers[msg.fileId].fileName, msg.fileType, false);
                 return;
             }
 
@@ -222,10 +214,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 const transfer = activeTransfers[msg.fileId];
                 if(transfer) {
                     transfer.chunks.push(msg.chunk);
-                    const chunkSize = Math.floor(msg.chunk.length * 0.75); // Base64估算
+                    const chunkSize = Math.floor(msg.chunk.length * 0.75); 
                     transfer.receivedSize += chunkSize;
                     
-                    // ★ 修复4: 接收端进度条和速度
                     const now = Date.now();
                     if(now - transfer.lastTime > 200) {
                         const bytesDiff = transfer.receivedSize - transfer.lastBytes;
@@ -241,7 +232,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (msg.type === 'file_end') {
                 const transfer = activeTransfers[msg.fileId];
                 if(transfer) {
-                    // ★ 修复2: 使用发送端传来的精确 fileType 生成 Blob
+                    // ★ 修复: 使用发送端指定的类型生成 Blob，解决 Mac 播放问题
                     const blob = b64toBlob(transfer.chunks.join(''), transfer.fileType);
                     const fileUrl = URL.createObjectURL(blob);
                     
@@ -251,8 +242,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     else if (transfer.fileType.startsWith('audio')) finalType = 'voice';
 
                     const finalMsg = {
-                        type: finalType, content: fileUrl, fileName: transfer.fileName, isSelf: false, ts: Date.now(),
-                        rawType: transfer.fileType // 保存原始 MIME 用于兼容性检查
+                        type: finalType, content: fileUrl, fileName: transfer.fileName, isSelf: false, ts: Date.now()
                     };
                     replaceProgressWithContent(msg.fileId, finalMsg);
                     
@@ -274,70 +264,105 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    // --- 5. 发送逻辑 (★ 修复：文件切片 & 语音类型) ---
+    // --- 5. 发送逻辑 (★ 核心修复：使用 slice 切片读取，解决 undefined/卡0%) ---
     function sendFileChunked(file, overrideType = null) {
         if(!activeChatId || !socket) return;
         const fileId = Date.now() + '-' + Math.random().toString(36).substr(2, 9);
-        const reader = new FileReader();
         
-        // 如果是语音，使用覆盖的类型；否则使用文件本身的类型
-        const sendType = overrideType || file.type; 
-        const sendName = file.name || "unknown_file";
+        // 强制检查文件名
+        const sendName = (file.name && file.name.length > 0) ? file.name : `file_${Date.now()}`;
+        const sendType = overrideType || file.type || 'application/octet-stream';
+        const totalSize = file.size;
 
         socket.emit('send_private', {
             targetId: activeChatId, type: 'file_start', fileId: fileId,
-            fileName: sendName, fileType: sendType, totalSize: file.size
+            fileName: sendName, fileType: sendType, totalSize: totalSize
         });
 
         appendProgressBubble(activeChatId, fileId, sendName, sendType, true);
 
-        reader.readAsDataURL(file);
-        reader.onload = () => {
-            const base64Data = reader.result.split(',')[1];
-            const totalChunks = Math.ceil(base64Data.length / CHUNK_SIZE);
-            let currentChunk = 0; let lastUpdate = Date.now(); let sentBytes = 0; let lastBytes = 0;
+        // ★ 核心重构：不使用 readAsDataURL 全量读取，改用 slice
+        let offset = 0;
+        let lastUpdate = Date.now();
+        let lastBytes = 0;
 
-            const sendLoop = setInterval(() => {
-                if(currentChunk >= totalChunks) {
-                    clearInterval(sendLoop);
-                    socket.emit('send_private', { targetId: activeChatId, type: 'file_end', fileId: fileId });
-                    
-                    let localMsgType = 'file';
-                    if (sendType.startsWith('image')) localMsgType = 'image';
-                    else if (sendType.startsWith('video')) localMsgType = 'video';
-                    else if (sendType.startsWith('audio')) localMsgType = 'voice';
+        const readNextChunk = () => {
+            if (offset >= totalSize) {
+                // 发送完毕
+                socket.emit('send_private', { targetId: activeChatId, type: 'file_end', fileId: fileId });
+                
+                let localMsgType = 'file';
+                if (sendType.startsWith('image')) localMsgType = 'image';
+                else if (sendType.startsWith('video')) localMsgType = 'video';
+                else if (sendType.startsWith('audio')) localMsgType = 'voice';
 
-                    const finalMsg = { type: localMsgType, content: URL.createObjectURL(file), fileName: sendName, isSelf: true };
-                    replaceProgressWithContent(fileId, finalMsg);
-                    
-                    if(!db.history[activeChatId]) db.history[activeChatId] = [];
-                    db.history[activeChatId].push({ ...finalMsg, content: '[File Sent]', type: 'text' }); saveDB();
-                    return;
-                }
-                const chunk = base64Data.slice(currentChunk * CHUNK_SIZE, (currentChunk + 1) * CHUNK_SIZE);
-                socket.emit('send_private', { targetId: activeChatId, type: 'file_chunk', fileId: fileId, chunk: chunk });
-                sentBytes += chunk.length; currentChunk++;
+                const finalMsg = { type: localMsgType, content: URL.createObjectURL(file), fileName: sendName, isSelf: true };
+                replaceProgressWithContent(fileId, finalMsg);
+                
+                if(!db.history[activeChatId]) db.history[activeChatId] = [];
+                db.history[activeChatId].push({ ...finalMsg, content: '[File Sent]', type: 'text' }); saveDB();
+                return;
+            }
 
+            const chunkBlob = file.slice(offset, offset + CHUNK_SIZE);
+            const reader = new FileReader();
+            
+            reader.onload = (e) => {
+                const arrayBuffer = e.target.result;
+                // 将 ArrayBuffer 转 Base64 发送 (兼容现有 Socket 文本协议)
+                const base64Chunk = arrayBufferToBase64(arrayBuffer);
+                
+                socket.emit('send_private', { targetId: activeChatId, type: 'file_chunk', fileId: fileId, chunk: base64Chunk });
+                
+                offset += chunkBlob.size;
+                
+                // UI 更新
                 const now = Date.now();
                 if(now - lastUpdate > 200) {
-                    const speed = ((sentBytes - lastBytes) / 1024) / ((now - lastUpdate)/1000);
-                    updateProgressUI(fileId, currentChunk * CHUNK_SIZE, base64Data.length, speed);
-                    lastUpdate = now; lastBytes = sentBytes;
+                    const speed = ((offset - lastBytes) / 1024) / ((now - lastUpdate)/1000);
+                    updateProgressUI(fileId, offset, totalSize, speed);
+                    lastUpdate = now; lastBytes = offset;
                 }
-            }, 5); 
+                
+                // 继续读下一块 (使用 setTimeout 0 避免阻塞主线程)
+                setTimeout(readNextChunk, 0);
+            };
+            
+            reader.onerror = () => { alert("Read Error"); };
+            reader.readAsArrayBuffer(chunkBlob);
         };
+
+        // 启动读取
+        readNextChunk();
+    }
+
+    // 辅助: ArrayBuffer 转 Base64
+    function arrayBufferToBase64(buffer) {
+        let binary = '';
+        const bytes = new Uint8Array(buffer);
+        const len = bytes.byteLength;
+        for (let i = 0; i < len; i++) {
+            binary += String.fromCharCode(bytes[i]);
+        }
+        return window.btoa(binary);
     }
 
     function b64toBlob(b64Data, contentType) {
-        const sliceSize = 512; const byteCharacters = atob(b64Data); const byteArrays = [];
-        for (let offset = 0; offset < byteCharacters.length; offset += sliceSize) {
-            const slice = byteCharacters.slice(offset, offset + sliceSize);
-            const byteNumbers = new Array(slice.length);
-            for (let i = 0; i < slice.length; i++) byteNumbers[i] = slice.charCodeAt(i);
-            const byteArray = new Uint8Array(byteNumbers);
-            byteArrays.push(byteArray);
+        // 增加容错
+        try {
+            const sliceSize = 512; const byteCharacters = atob(b64Data); const byteArrays = [];
+            for (let offset = 0; offset < byteCharacters.length; offset += sliceSize) {
+                const slice = byteCharacters.slice(offset, offset + sliceSize);
+                const byteNumbers = new Array(slice.length);
+                for (let i = 0; i < slice.length; i++) byteNumbers[i] = slice.charCodeAt(i);
+                const byteArray = new Uint8Array(byteNumbers);
+                byteArrays.push(byteArray);
+            }
+            return new Blob(byteArrays, {type: contentType});
+        } catch(e) {
+            console.error("Blob Convert Error", e);
+            return new Blob([], {type: contentType});
         }
-        return new Blob(byteArrays, {type: contentType});
     }
 
     function renderFriends() {
@@ -392,7 +417,9 @@ document.addEventListener('DOMContentLoaded', () => {
         if(activeChatId !== chatId) return;
         const container = document.getElementById('messages-container');
         const div = document.createElement('div'); div.id = `progress-row-${fileId}`; div.className = `msg-row ${isSelf?'self':'other'}`;
-        div.innerHTML = `<div class="bubble" style="min-width:160px; font-size:12px;"><div style="font-weight:bold; margin-bottom:4px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:150px;">${isSelf?'⬆':'⬇'} ${fileName}</div><div style="background:#ddd; height:4px; border-radius:2px; overflow:hidden; margin-bottom:4px;"><div id="bar-${fileId}" style="width:0%; height:100%; background:${isSelf?'#fff':'#59BC10'}; transition:width 0.1s;"></div></div><div style="display:flex; justify-content:space-between; font-size:10px; opacity:0.8;"><span id="speed-${fileId}">0 KB/s</span><span id="pct-${fileId}">0%</span></div></div>`;
+        // 防止 fileName 为空导致的显示问题
+        const safeName = fileName || "File";
+        div.innerHTML = `<div class="bubble" style="min-width:160px; font-size:12px;"><div style="font-weight:bold; margin-bottom:4px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:150px;">${isSelf?'⬆':'⬇'} ${safeName}</div><div style="background:#ddd; height:4px; border-radius:2px; overflow:hidden; margin-bottom:4px;"><div id="bar-${fileId}" style="width:0%; height:100%; background:${isSelf?'#fff':'#59BC10'}; transition:width 0.1s;"></div></div><div style="display:flex; justify-content:space-between; font-size:10px; opacity:0.8;"><span id="speed-${fileId}">0 KB/s</span><span id="pct-${fileId}">0%</span></div></div>`;
         container.appendChild(div); container.scrollTop = container.scrollHeight;
     }
 
@@ -422,26 +449,25 @@ document.addEventListener('DOMContentLoaded', () => {
         else { voiceBtn.classList.add('hidden'); voiceBtn.style.display = 'none'; textWrapper.classList.remove('hidden'); textWrapper.style.display = 'flex'; modeSwitch.innerText = "🎤"; setTimeout(() => document.getElementById('chat-input').focus(), 100); }
     };
 
-    // 录音 (★ 修复2: 动态类型检测 + 切片发送)
+    // 录音 (★ 修复: Mac兼容性 & 内存优化)
     let mediaRecorder, audioChunks;
     const startRec = async (e) => {
         if(e) e.preventDefault();
         try {
             const stream = await navigator.mediaDevices.getUserMedia({audio:true});
-            // 检测浏览器支持的格式，优先选择 webm，Safari 使用 mp4
-            let options = {};
-            if (MediaRecorder.isTypeSupported('audio/webm')) options = { mimeType: 'audio/webm' };
-            else if (MediaRecorder.isTypeSupported('audio/mp4')) options = { mimeType: 'audio/mp4' };
+            // 优先 mp4 (Safari), 其次 webm
+            let mimeType = 'audio/webm';
+            if (MediaRecorder.isTypeSupported('audio/mp4')) mimeType = 'audio/mp4';
+            else if (MediaRecorder.isTypeSupported('audio/webm;codecs=opus')) mimeType = 'audio/webm;codecs=opus';
             
-            mediaRecorder = new MediaRecorder(stream, options);
+            mediaRecorder = new MediaRecorder(stream, { mimeType });
             audioChunks = [];
             mediaRecorder.ondataavailable = e => { if(e.data.size > 0) audioChunks.push(e.data); };
             mediaRecorder.onstop = () => {
-                const mimeType = mediaRecorder.mimeType; // 获取实际使用的类型
                 const blob = new Blob(audioChunks, {type: mimeType});
-                // 封装成File对象，以便复用分片上传逻辑，并传递MIME
-                const audioFile = new File([blob], "voice_msg.wav", { type: mimeType });
-                sendFileChunked(audioFile, mimeType); // 走分片通道发送语音
+                // 转换为 File 对象并分片发送，避免 Base64 字符串过长崩溃
+                const voiceFile = new File([blob], "voice_" + Date.now() + ".wav", { type: mimeType });
+                sendFileChunked(voiceFile, mimeType);
                 stream.getTracks().forEach(track => track.stop());
             };
             mediaRecorder.start();
