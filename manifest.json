@@ -1,19 +1,20 @@
 {
-  "name": "WojakNet Beta 0.9",
+  "name": "WojakNet",
   "short_name": "WojakNet",
-  "start_url": "./index-2.html",
+  "start_url": ".",
   "display": "standalone",
-  "background_color": "#F0F5F2",
-  "theme_color": "#59BC10",
+  "background_color": "#F2F2F7",
+  "theme_color": "#007AFF",
   "orientation": "portrait",
+  "scope": ".",
   "icons": [
     {
-      "src": "https://img.favpng.com/15/2/23/pepe-the-frog-internet-meme-know-your-meme-imgur-4chan-png-favpng-QZ3Tf1s63z3xWf1b1v1v1.png",
+      "src": "https://api.dicebear.com/7.x/notionists/png?seed=icon&backgroundColor=007AFF",
       "sizes": "192x192",
       "type": "image/png"
     },
     {
-      "src": "https://img.favpng.com/15/2/23/pepe-the-frog-internet-meme-know-your-meme-imgur-4chan-png-favpng-QZ3Tf1s63z3xWf1b1v1v1.png",
+      "src": "https://api.dicebear.com/7.x/notionists/png?seed=icon&backgroundColor=007AFF",
       "sizes": "512x512",
       "type": "image/png"
     }
