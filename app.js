@@ -1,77 +1,127 @@
 document.addEventListener('DOMContentLoaded', () => {
 
+    // ★★★ 请填入你的 Render 地址 ★★★
     const SERVER_URL = 'https://wojak-backend.onrender.com';
 
-    // --- 0. 强制样式 (Pepe 风格) ---
+    // --- 0. 强制样式修正 (针对性解决：布局挤压、滚动遮挡、字体颜色) ---
     const styleSheet = document.createElement("style");
     styleSheet.innerText = `
-        :root { --pepe-green: #59BC10; --pepe-dark: #46960C; --bg: #F2F2F7; --danger: #FF3B30; }
-        body { background: var(--bg); font-family: sans-serif; -webkit-tap-highlight-color: transparent; overscroll-behavior-y: none; }
-        .defi-nav { display: none !important; }
-        .scroll-content { padding-bottom: 80px !important; }
-
-        /* 头部 */
-        .defi-header { display: flex; justify-content: space-between; align-items: center; padding: 10px 15px; background: #fff; z-index: 100; position: relative; border-bottom: 1px solid #eee; }
-        .user-pill { display: flex; align-items: center; gap: 10px; background: #f5f5f5; padding: 5px 10px; border-radius: 20px; cursor: pointer; border: 1px solid #ddd; }
-        .header-avatar { width: 32px; height: 32px; border-radius: 50%; background: #ddd; object-fit: cover; }
-
-        /* 底部输入栏 (防挤压) */
-        .chat-footer { position: fixed; bottom: 0; left: 0; width: 100%; height: 60px; background: #fff; display: flex; align-items: center; padding: 0 8px; border-top: 1px solid #eee; z-index: 500; box-sizing: border-box; }
-        .footer-tool, #sticker-btn, #file-btn { width: 40px; height: 40px; border-radius: 50%; background: #f2f2f2; border: 1px solid #ddd; font-size: 20px; flex-shrink: 0; margin: 0 3px; display: flex; justify-content: center; align-items: center; cursor: pointer; }
-        .input-zone { flex: 1; position: relative; height: 42px; margin: 0 4px; display: flex; min-width: 0; }
-        .text-wrapper { width: 100%; height: 100%; display: flex; align-items: center; position: absolute; top: 0; left: 0; z-index: 20; background: #fff; transition: opacity 0.1s; }
-        .text-wrapper.hidden { display: none !important; }
-        .voice-btn-long { width: 100%; height: 100%; border-radius: 21px; background: var(--danger); color: #fff; font-weight: bold; border: none; font-size: 14px; position: absolute; top: 0; left: 0; z-index: 10; display: none; cursor: pointer; }
-        .voice-btn-long.active { display: block !important; }
-        .voice-btn-long.recording { animation: pulse 1s infinite; }
-        #chat-input { flex: 1; height: 100%; border-radius: 20px; background: #f9f9f9; border: 1px solid #ddd; padding: 0 12px; outline: none; font-size: 16px; min-width: 0; }
-        .send-arrow { width: 40px; height: 40px; border-radius: 50%; background: var(--pepe-green); color: #fff; border: none; font-weight: bold; flex-shrink: 0; margin-left: 5px; cursor: pointer; }
-
-        /* 列表与气泡 */
-        .k-list-item { background: #fff; border-radius: 12px; padding: 12px; margin-bottom: 10px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); border: 1px solid #f0f0f0; position: relative; }
-        .bubble { padding: 10px 14px; border-radius: 16px; max-width: 75%; word-break: break-word; box-shadow: 0 1px 2px rgba(0,0,0,0.05); position: relative; }
-        .msg-row.self .bubble { background: var(--pepe-green); color: #fff; }
-        .msg-row.other .bubble { background: #fff; color: #000; border: 1px solid #eee; }
-        .bubble.clean { background: none !important; padding: 0 !important; box-shadow: none !important; border: none !important; }
-        .thumb-box { border-radius: 12px; overflow: hidden; background: #000; max-width: 200px; display: block; }
-        .thumb-img { width: 100%; height: auto; display: block; }
-        .sticker-img { width: 100px; height: 100px; object-fit: contain; display: block; }
-        .doc-card { display: flex; align-items: center; gap: 10px; background: #fff; padding: 10px; border-radius: 10px; text-decoration: none; color: #333; border: 1px solid #eee; min-width: 200px; box-shadow: 0 2px 5px rgba(0,0,0,0.05); }
-        .doc-name { font-weight: bold; font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 150px; }
+        :root { --pepe-green: #59BC10; --bg: #F2F2F7; --danger: #FF3B30; }
+        body { background: var(--bg); font-family: -apple-system, sans-serif; -webkit-tap-highlight-color: transparent; overflow: hidden; }
         
+        /* 隐藏干扰元素 */
+        .defi-nav { display: none !important; }
+        
+        /* 容器滚动修正 */
+        .scroll-content { height: 100vh; overflow-y: auto; padding-bottom: 80px !important; box-sizing: border-box; }
+        #messages-container { 
+            height: 100%; overflow-y: auto; padding: 15px; 
+            padding-bottom: 120px !important; /* ★ 关键：底部留白防止遮挡 */
+            display: flex; flex-direction: column; gap: 10px;
+        }
+
+        /* ★ 底部栏物理修复 ★ */
+        .chat-footer { 
+            position: fixed; bottom: 0; left: 0; width: 100%; height: 70px; 
+            background: #fff; border-top: 1px solid #eee; z-index: 999; 
+            display: flex; align-items: center; padding: 0 5px; box-sizing: border-box;
+        }
+        
+        /* 按钮固定尺寸，不可压缩 */
+        .footer-tool { 
+            width: 44px; height: 44px; border-radius: 50%; background: #f0f0f0; 
+            border: none; font-size: 22px; flex-shrink: 0; margin: 0 2px; 
+            display: flex; justify-content: center; align-items: center; cursor: pointer;
+        }
+
+        /* 输入区容器 */
+        .input-zone { 
+            flex: 1; height: 44px; position: relative; margin: 0 5px; 
+            min-width: 0; /* 防止flex溢出 */
+        }
+
+        /* 文本框 (强制可见性) */
+        #text-input-wrapper { 
+            width: 100%; height: 100%; display: flex; align-items: center; 
+            background: #fff; position: absolute; top: 0; left: 0; z-index: 20;
+        }
+        #chat-input { 
+            flex: 1; height: 100%; background: #fff; border: 2px solid #ddd; 
+            border-radius: 22px; padding: 0 15px; outline: none; 
+            font-size: 16px; color: #000; /* ★ 修复字体颜色 ★ */
+            min-width: 0;
+        }
+        #chat-input:focus { border-color: var(--pepe-green); }
+        
+        .send-arrow { 
+            width: 44px; height: 44px; border-radius: 50%; background: var(--pepe-green); 
+            color: #fff; border: none; font-weight: bold; flex-shrink: 0; margin-left: 5px; 
+            font-size: 18px; cursor: pointer;
+        }
+
+        /* 语音按钮 (绝对覆盖) */
+        #voice-record-btn { 
+            width: 100%; height: 100%; border-radius: 22px; background: var(--danger); 
+            color: #fff; font-weight: 900; border: none; font-size: 16px; letter-spacing: 1px;
+            position: absolute; top: 0; left: 0; z-index: 10; 
+            display: none; /* 默认隐藏 */ cursor: pointer;
+        }
+        #voice-record-btn.active { display: block !important; z-index: 30; }
+        #voice-record-btn.recording { animation: pulse 1s infinite; }
+
+        /* 辅助类 */
+        .hidden { display: none !important; opacity: 0; pointer-events: none; }
+
+        /* 气泡样式 */
+        .msg-row { display: flex; width: 100%; margin-bottom: 8px; }
+        .msg-row.self { justify-content: flex-end; }
+        .msg-row.other { justify-content: flex-start; }
+        
+        .bubble { 
+            padding: 12px 16px; border-radius: 18px; max-width: 80%; 
+            word-break: break-word; position: relative; box-shadow: 0 1px 2px rgba(0,0,0,0.1);
+        }
+        .msg-row.self .bubble { background: var(--pepe-green); color: #fff; border-bottom-right-radius: 4px; }
+        .msg-row.other .bubble { background: #fff; color: #000; border: 1px solid #eee; border-bottom-left-radius: 4px; }
+        
+        /* 干净气泡 (图片/视频) */
+        .bubble.clean { background: none !important; padding: 0 !important; border: none !important; box-shadow: none !important; }
+
+        /* 媒体与卡片 */
+        .thumb-box { border-radius: 12px; overflow: hidden; background: #000; max-width: 220px; }
+        .thumb-img { display: block; max-width: 100%; height: auto; }
+        
+        .doc-card { 
+            display: flex; align-items: center; gap: 12px; 
+            background: #fff; padding: 12px; border-radius: 12px; 
+            text-decoration: none; color: #333; border: 1px solid #eee; 
+            min-width: 220px; max-width: 100%; box-sizing: border-box;
+        }
+        .doc-info { flex: 1; min-width: 0; }
+        .doc-name { font-weight: bold; font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
         /* 进度条 */
-        .progress-wrapper { background: #fff; padding: 10px; border-radius: 10px; border: 2px solid var(--pepe-green); min-width: 160px; }
-        .progress-track { height: 6px; background: #eee; border-radius: 3px; margin: 5px 0; overflow: hidden; }
+        .progress-wrapper { background: #fff; padding: 12px; border-radius: 12px; border: 2px solid var(--pepe-green); width: 220px; }
+        .progress-track { height: 6px; background: #eee; border-radius: 3px; margin: 8px 0; overflow: hidden; }
         .progress-fill { height: 100%; background: var(--pepe-green); width: 0%; transition: width 0.1s; }
 
-        /* 拨号盘 (★ 找回样式 ★) */
-        .modal-overlay { z-index: 100000 !important; background: rgba(0,0,0,0.8); }
-        .numpad-container { padding: 15px; text-align: center; }
-        .id-display-screen { font-size: 36px; color: var(--pepe-green); border-bottom: 3px solid #eee; margin-bottom: 20px; font-weight: 900; letter-spacing: 4px; height: 50px; line-height: 50px; }
-        .numpad-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 15px; }
-        .num-btn { width: 60px; height: 60px; border-radius: 12px; background: #fff; box-shadow: 0 4px 0 #ddd; border: 2px solid #eee; font-size: 24px; font-weight: bold; display: flex; justify-content: center; align-items: center; cursor: pointer; }
-        .num-btn:active { transform: translateY(4px); box-shadow: none; }
-        .num-btn.connect { background: var(--pepe-green); color: #fff; border-color: var(--pepe-dark); box-shadow: 0 4px 0 var(--pepe-dark); }
-
         /* 动画 */
-        .shake-active { animation: shake 0.5s infinite; border-left: 4px solid var(--danger); }
-        .marquee-text { display: inline-block; padding-left: 100%; animation: scroll 4s linear infinite; color: var(--danger); font-size: 10px; font-weight: 900; }
-        @keyframes shake { 0%,100%{transform:translateX(0);} 25%{transform:translateX(-3px);} 75%{transform:translateX(3px);} }
-        @keyframes scroll { 100% { transform: translateX(-100%); } }
-        @keyframes pulse { 0% {transform: scale(1);} 50% {transform: scale(1.05);} }
-        
-        .list-edit-btn { position: absolute; right: 15px; top: 50%; transform: translateY(-50%); color: #ccc; font-size: 18px; padding: 5px; z-index: 10; }
-        .cancel-btn { position: absolute; top: -8px; right: -8px; width: 22px; height: 22px; background: var(--danger); color: #fff; border-radius: 50%; font-size: 12px; display: flex; justify-content: center; align-items: center; cursor: pointer; z-index: 5; border: 2px solid #fff; }
-        .drag-overlay { display: none; z-index: 99999; }
-        .drag-overlay.active { display: flex; }
+        @keyframes pulse { 0%{transform:scale(1);} 50%{transform:scale(1.05);} }
+        .shake-active { animation: shake 0.5s infinite; border-left: 5px solid var(--danger); background: #fff5f5; }
+        @keyframes shake { 0%,100%{transform:translateX(0);} 25%{transform:translateX(-4px);} 75%{transform:translateX(4px);} }
+
+        /* 模态框 */
+        .modal-overlay { z-index: 10000; background: rgba(0,0,0,0.85); }
+        .cancel-btn { position: absolute; top: -8px; right: -8px; width: 24px; height: 24px; background: var(--danger); color: #fff; border-radius: 50%; display: flex; justify-content: center; align-items: center; font-size: 14px; cursor: pointer; border: 2px solid #fff; }
     `;
     document.head.appendChild(styleSheet);
 
-    const previewHTML = `<div id="media-preview-modal" class="modal-overlay hidden" style="background:rgba(0,0,0,0.95);z-index:99999;"><button onclick="closePreview()" style="position:absolute;top:40px;right:20px;color:#fff;font-size:30px;background:none;border:none;">✕</button><a id="preview-dl" href="#" download style="position:absolute;top:40px;right:70px;font-size:30px;text-decoration:none;">⬇️</a><div id="preview-container" style="width:100%;height:100%;display:flex;justify-content:center;align-items:center;"></div></div>`;
+    // 预览层
+    const previewHTML = `<div id="media-preview-modal" class="modal-overlay hidden" style="z-index:10001;"><button onclick="closePreview()" style="position:absolute;top:40px;right:20px;color:#fff;font-size:30px;background:none;border:none;">✕</button><a id="preview-dl" href="#" download style="position:absolute;top:40px;right:70px;font-size:30px;text-decoration:none;">⬇️</a><div id="preview-container" style="width:100%;height:100%;display:flex;justify-content:center;align-items:center;"></div></div>`;
     document.body.insertAdjacentHTML('beforeend', previewHTML);
 
-    // --- 1. 数据 ---
-    const DB_KEY = 'pepe_v55_final_audit';
+    // --- 1. 数据与状态 ---
+    const DB_KEY = 'pepe_v47_final_redemption';
     const CHUNK_SIZE = 12 * 1024;
     let db, socket, activeChatId;
     let activeDownloads = {}, isSending = false, cancelFlag = {}, uploadQueue = [], globalAudio = null;
@@ -86,85 +136,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const saveDB = () => localStorage.setItem(DB_KEY, JSON.stringify(db));
     const MY_ID = db.profile.id;
 
-    // --- 2. UI 初始化 ---
-    const initUI = () => {
-        document.getElementById('my-id-display').innerText = MY_ID;
-        document.getElementById('my-nickname').innerText = db.profile.nickname;
-        const avatar = document.getElementById('my-avatar');
-        avatar.src = `https://api.dicebear.com/7.x/notionists/svg?seed=${db.profile.avatarSeed}`;
-        
-        // 强制注入图标
-        let link = document.querySelector("link[rel*='icon']") || document.createElement('link');
-        link.type = 'image/png'; link.rel = 'apple-touch-icon'; link.href = './icon.png';
-        document.getElementsByTagName('head')[0].appendChild(link);
-
-        renderFriends();
-        setupStickers();
-        
-        // ★ 关键：初始化时就注入拨号盘 HTML ★
-        setupDialpad();
-
-        setTimeout(() => {
-            const q = document.getElementById("qrcode");
-            if(q && window.QRCode) { q.innerHTML=''; new QRCode(q, {text:MY_ID, width:60, height:60, colorDark:"#59BC10", colorLight:"#FFFFFF"}); }
-        }, 500);
-    };
-
-    // --- 3. 拨号盘 (★ 找回丢失的功能 ★) ---
-    let dialInput = "";
-    function setupDialpad() {
-        // 找到模态框主体
-        const body = document.querySelector('#add-overlay .modal-body');
-        if(body) {
-            // 注入 HTML
-            body.innerHTML = `
-            <div class="numpad-container">
-                <div id="dial-display" class="id-display-screen">____</div>
-                <div class="numpad-grid">
-                    <div class="num-btn" onclick="dial(1)">1</div><div class="num-btn" onclick="dial(2)">2</div><div class="num-btn" onclick="dial(3)">3</div>
-                    <div class="num-btn" onclick="dial(4)">4</div><div class="num-btn" onclick="dial(5)">5</div><div class="num-btn" onclick="dial(6)">6</div>
-                    <div class="num-btn" onclick="dial(7)">7</div><div class="num-btn" onclick="dial(8)">8</div><div class="num-btn" onclick="dial(9)">9</div>
-                    <div class="num-btn clear" onclick="dial('C')">C</div><div class="num-btn" onclick="dial(0)">0</div>
-                    <div class="num-btn connect" onclick="dial('OK')">🤝</div>
-                </div>
-            </div>`;
-        }
-    }
-    
-    // 全局拨号函数
-    window.dial = (k) => {
-        const d = document.getElementById('dial-display');
-        if(k==='C') { dialInput=""; d.innerText="____"; return; }
-        
-        // ★ 握手跳转 (修复死锁) ★
-        if(k==='OK') { 
-            if(dialInput.length===4) {
-                if(dialInput === MY_ID) { alert("No Self-Chat"); return; }
-                
-                const targetId = dialInput; // 锁住变量
-                
-                // 1. 先添加好友
-                if(!db.friends.find(f=>f.id===targetId)) {
-                    db.friends.push({ id: targetId, addedAt: Date.now(), alias: `User ${targetId}`, unread: false });
-                    saveDB();
-                    renderFriends();
-                }
-                
-                // 2. 强制关闭弹窗
-                window.closeAllModals();
-                
-                // 3. 强制跳转 (微延时保证DOM渲染)
-                setTimeout(() => openChat(targetId), 50);
-                
-                dialInput=""; d.innerText="____";
-            } else { alert("Enter 4 Digits"); }
-            return; 
-        }
-        
-        if(dialInput.length<4) { dialInput+=k; d.innerText=dialInput.padEnd(4,'_'); }
-    };
-
-    // --- 4. 网络 (Tunnel) ---
+    // --- 2. 核心网络 (隧道模式 - 唯一靠谱方案) ---
     if(!SERVER_URL.includes('onrender')) alert("Config URL!");
     else {
         socket = io(SERVER_URL, { reconnection: true, transports: ['websocket'] });
@@ -181,10 +153,12 @@ document.addEventListener('DOMContentLoaded', () => {
             }
             const friend = db.friends.find(f=>f.id===fid);
 
+            // 隧道文件
             if(msg.type === 'tunnel_file_packet') {
                 try { const p = JSON.parse(msg.content); handleTunnelPacket(p, fid, friend); } catch(e){} return;
             }
 
+            // 普通消息
             const m = { type: msg.type, content: msg.content, isSelf: false, ts: msg.timestamp, fileName: msg.fileName };
             saveAndNotify(fid, m, friend);
         });
@@ -205,11 +179,13 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function handleTunnelPacket(p, fid, friend) {
+        const safeName = p.fileName || "Unknown_File";
+        
         if(p.subType === 'chunk') {
             if(activeDownloads[p.fileId] === 'cancelled') return;
             if(!activeDownloads[p.fileId]) {
-                activeDownloads[p.fileId] = { chunks:[], totalSize:p.totalSize, receivedSize:0, lastTime:Date.now(), lastBytes:0, fileName:p.fileName, fileType:p.fileType };
-                if(activeChatId === fid) appendProgressBubble(fid, p.fileId, p.fileName, false);
+                activeDownloads[p.fileId] = { chunks:[], totalSize:p.totalSize, receivedSize:0, lastTime:Date.now(), lastBytes:0, fileName:safeName, fileType:p.fileType };
+                if(activeChatId === fid) appendProgressBubble(fid, p.fileId, safeName, false);
             }
             const dl = activeDownloads[p.fileId];
             dl.chunks.push(p.data);
@@ -221,7 +197,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 updateProgressUI(p.fileId, dl.receivedSize, dl.totalSize, spd);
                 dl.lastTime = now; dl.lastBytes = dl.receivedSize;
             }
-        } else if(p.subType === 'end') {
+        } 
+        else if(p.subType === 'end') {
             if(activeDownloads[p.fileId] === 'cancelled') return;
             const dl = activeDownloads[p.fileId];
             if(dl) {
@@ -232,7 +209,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 if(dl.fileType.startsWith('image')) type = 'image';
                 else if(dl.fileType.startsWith('video')) type = 'video';
                 else if(dl.fileType.startsWith('audio')) type = 'voice';
-                
+
                 const finalMsg = { type, content: url, fileName: dl.fileName, isSelf: false, ts: Date.now() };
                 
                 if(activeChatId === fid) replaceProgressWithContent(p.fileId, finalMsg);
@@ -264,8 +241,10 @@ document.addEventListener('DOMContentLoaded', () => {
         appendProgressBubble(activeChatId, fileId, sendName, true);
         
         let offset=0, lastTime=Date.now(), lastBytes=0;
+
         const readNext = () => {
             if (cancelFlag[fileId] || !socket.connected) { isSending = false; setTimeout(processQueue, 500); return; }
+            
             if (offset >= total) {
                 socket.emit('send_private', { targetId: activeChatId, type: 'tunnel_file_packet', content: JSON.stringify({ subType: 'end', fileId }) });
                 
@@ -291,6 +270,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     content: JSON.stringify({ subType: 'chunk', fileId, data: b64, fileName: sendName, fileType: sendType, totalSize: total })
                 });
                 offset += chunk.size;
+                
                 const now = Date.now();
                 if(now - lastTime > 200) {
                     const spd = ((offset - lastBytes)/1024)/((now - lastTime)/1000);
@@ -304,15 +284,8 @@ document.addEventListener('DOMContentLoaded', () => {
         readNext();
     }
 
-    function traverseFileTree(item) {
-        if (item.isFile) { item.file(file => addToQueue(file)); } 
-        else if (item.isDirectory) {
-            const dirReader = item.createReader();
-            dirReader.readEntries(entries => { for (let i=0; i<entries.length; i++) traverseFileTree(entries[i]); });
-        }
-    }
-
-    // --- 6. 界面 ---
+    // --- 6. UI 渲染与交互 ---
+    
     function openChat(id) {
         try{ if(window.speechSynthesis) window.speechSynthesis.cancel(); }catch(e){}
         activeChatId = id;
@@ -323,27 +296,30 @@ document.addEventListener('DOMContentLoaded', () => {
         view.classList.remove('right-sheet');
         view.classList.add('active');
         
-        // 强制重置
+        // ★ 关键：注入历史记录，支持安卓手势 ★
+        window.history.pushState({ chat: true }, "");
+        
+        // 强制重置输入栏状态
         document.getElementById('text-input-wrapper').classList.remove('hidden');
         document.getElementById('voice-record-btn').classList.remove('active');
         document.getElementById('mode-switch-btn').innerText = "🎤";
-        
-        window.history.pushState({ chat: true }, "");
-        
+
         const box = document.getElementById('messages-container');
         box.innerHTML = '';
         const msgs = db.history[id] || [];
         msgs.forEach(m => appendMsgDOM(m));
     }
 
+    // ★ 返回键逻辑：强制关闭 ★
     window.goBack = () => {
+        const view = document.getElementById('view-chat');
+        view.classList.remove('active');
+        setTimeout(() => view.classList.add('right-sheet'), 300);
+        activeChatId = null;
+        renderFriends();
         if(history.state && history.state.chat) history.back();
-        else {
-            document.getElementById('view-chat').classList.remove('active');
-            setTimeout(() => document.getElementById('view-chat').classList.add('right-sheet'), 300);
-            activeChatId = null; renderFriends();
-        }
     };
+    document.getElementById('chat-back-btn').onclick = window.goBack;
     window.addEventListener('popstate', () => {
         if(document.getElementById('media-preview-modal').style.display!=='none') { window.closePreview(); return; }
         document.getElementById('view-chat').classList.remove('active');
@@ -363,7 +339,7 @@ document.addEventListener('DOMContentLoaded', () => {
             html = `<div class="bubble audio-player"><span>🎤</span><button class="audio-btn" onclick="handleAudio('play','${msg.content}')">▶</button><button class="audio-btn" onclick="handleAudio('pause')">⏸</button><button class="audio-btn" onclick="handleAudio('stop')">⏹</button></div>`;
         } 
         else if(msg.type === 'image') html = `<div class="bubble clean"><div class="thumb-box" onclick="previewMedia('${msg.content}','image')"><img src="${msg.content}" class="thumb-img"></div></div>`;
-        else if(msg.type === 'video') html = `<div class="bubble clean"><div class="thumb-box" onclick="previewMedia('${msg.content}','video')"><video src="${msg.content}#t=0.1" class="thumb-img" preload="metadata" muted></video><div style="position:absolute;top:40%;left:45%;color:#fff;font-size:24px;">▶</div></div></div>`;
+        else if(msg.type === 'video') html = `<div class="bubble clean"><div class="thumb-box" onclick="previewMedia('${msg.content}','video')"><video src="${msg.content}#t=0.1" class="thumb-img" preload="metadata" muted></video><div style="position:absolute;top:40%;left:45%;color:#fff;font-size:30px;">▶</div></div></div>`;
         else if(msg.type === 'file') {
             let icon = '📄';
             if(msg.fileName.match(/\.(doc|docx)$/i)) icon='📝';
@@ -388,23 +364,31 @@ document.addEventListener('DOMContentLoaded', () => {
         const row = document.getElementById(`progress-row-${id}`);
         if(row) { row.remove(); appendMsgDOM(msg); }
     }
-    function b64toBlob(b,t) { try{ const bin=atob(b); const a=new Uint8Array(bin.length); for(let i=0;i<bin.length;i++) a[i]=bin.charCodeAt(i); return new Blob([a],{type:t}); }catch(e){ return new Blob([],{type:t}); } }
 
-    // --- 7. 绑定 ---
-    document.getElementById('chat-send-btn').onclick = () => { const t=document.getElementById('chat-input'); if(t.value.trim()){ sendData('text', t.value); t.value=''; }};
-    document.getElementById('chat-back-btn').onclick = window.goBack;
-    document.getElementById('chat-input').addEventListener('keypress', e=>{if(e.key==='Enter') document.getElementById('chat-send-btn').click();});
+    // --- 事件绑定 ---
+    const handleSend = () => { const t=document.getElementById('chat-input'); if(t.value.trim()){ sendData('text', t.value); t.value=''; }};
+    document.getElementById('chat-send-btn').onclick = handleSend;
+    document.getElementById('chat-input').addEventListener('keypress', e=>{if(e.key==='Enter') handleSend();});
 
+    // ★ 模式切换 (修复：显示/隐藏逻辑) ★
     document.getElementById('mode-switch-btn').onclick = () => {
-        const t = document.getElementById('text-input-wrapper'); const v = document.getElementById('voice-record-btn'); const b = document.getElementById('mode-switch-btn');
-        if(t.classList.contains('hidden')) { t.classList.remove('hidden'); v.classList.remove('active'); b.innerText="🎤"; } 
-        else { t.classList.add('hidden'); v.classList.add('active'); b.innerText="⌨️"; }
+        const tBox = document.getElementById('text-input-wrapper');
+        const vBtn = document.getElementById('voice-record-btn');
+        const btn = document.getElementById('mode-switch-btn');
+        if(tBox.classList.contains('hidden')) {
+            tBox.classList.remove('hidden'); vBtn.classList.remove('active'); btn.innerText = "🎤";
+            setTimeout(()=>document.getElementById('chat-input').focus(), 50);
+        } else {
+            tBox.classList.add('hidden'); vBtn.classList.add('active'); btn.innerText = "⌨️";
+        }
     };
 
+    // 文件
     const fIn = document.getElementById('chat-file-input'); fIn.setAttribute('multiple','');
     document.getElementById('file-btn').onclick = () => fIn.click();
     fIn.onchange = e => { if(e.target.files.length) Array.from(e.target.files).forEach(addToQueue); };
     
+    // 拖拽遍历
     const drag = document.getElementById('drag-overlay');
     window.addEventListener('dragenter', () => { if(activeChatId) drag.classList.remove('hidden'); });
     drag.addEventListener('dragleave', (e) => { if(e.target===drag) drag.classList.add('hidden'); });
@@ -416,29 +400,13 @@ document.addEventListener('DOMContentLoaded', () => {
             else if(e.dataTransfer.files.length) Array.from(e.target.files).forEach(addToQueue);
         }
     });
-
-    // 绑定打开 Add ID (重置内容)
-    document.getElementById('add-id-btn').onclick = () => { 
-        document.getElementById('add-overlay').classList.remove('hidden'); 
-        setupDialpad(); // ★ 强制刷新 HTML
-        dialInput=""; document.getElementById('dial-display').innerText="____"; 
-    };
-    document.getElementById('scan-btn').onclick = () => {
-        document.getElementById('qr-overlay').classList.remove('hidden');
-        setTimeout(()=>{ if(window.Html5Qrcode) { const s=new Html5Qrcode("qr-reader"); window.scanner=s; s.start({facingMode:"environment"}, {fps:10}, t=>{ s.stop().then(()=>{ window.closeAllModals(); handleAddFriend(t); }); }); } }, 300);
-    };
-
-    // 表情
-    function setupStickers() {
-        const g = document.getElementById('sticker-grid'); g.innerHTML = '';
-        const gifs = ["https://media.tenor.com/2nZ2_2s_2zAAAAAi/pepe-frog.gif", "https://media.tenor.com/Xk_Xk_XkAAAAi/pepe-dance.gif", "https://media.tenor.com/8x_8x_8xAAAAi/pepe-sad.gif", "https://media.tenor.com/9y_9y_9yAAAAi/pepe-happy.gif"];
-        gifs.forEach(s=>{
-            const i=document.createElement('img'); i.src=s; i.className='sticker-img'; i.style.cssText="width:60px;height:60px;object-fit:contain;cursor:pointer;";
-            i.onclick=()=>{ if(activeChatId){ sendData('sticker', s); document.getElementById('sticker-panel').classList.add('hidden'); }};
-            g.appendChild(i);
-        });
+    function traverseFileTree(item) {
+        if (item.isFile) { item.file(file => addToQueue(file)); } 
+        else if (item.isDirectory) {
+            const dirReader = item.createReader();
+            dirReader.readEntries(entries => { for (let i=0; i<entries.length; i++) traverseFileTree(entries[i]); });
+        }
     }
-    document.getElementById('sticker-btn').onclick = () => document.getElementById('sticker-panel').classList.toggle('hidden');
 
     // 录音
     const vBtn = document.getElementById('voice-record-btn');
@@ -450,38 +418,72 @@ document.addEventListener('DOMContentLoaded', () => {
     vBtn.addEventListener('mousedown', startR); vBtn.addEventListener('mouseup', stopR);
     vBtn.addEventListener('touchstart', startR); vBtn.addEventListener('touchend', stopR);
 
+    // Utils
+    function b64toBlob(b,t) { try{ const bin=atob(b); const a=new Uint8Array(bin.length); for(let i=0;i<bin.length;i++) a[i]=bin.charCodeAt(i); return new Blob([a],{type:t}); }catch(e){ return new Blob([],{type:t}); } }
     window.closeAllModals = () => document.querySelectorAll('.modal-overlay').forEach(e=>e.classList.add('hidden'));
     window.cancelTransfer = (id, self) => { if(self) cancelFlag[id]=true; else activeDownloads[id]='cancelled'; document.getElementById(`progress-row-${id}`).innerHTML='<div class="bubble clean" style="color:red;font-size:12px">🚫 Cancelled</div>'; };
-    window.previewMedia = (u,t) => {
-        const m = document.getElementById('media-preview-modal'); const c = document.getElementById('preview-container'); c.innerHTML='';
-        const dl = document.getElementById('preview-download-btn'); if(dl) { dl.href=u; dl.download=`f_${Date.now()}`; }
-        c.innerHTML = t==='image' ? `<img src="${u}" style="max-width:100%;max-height:100vh;">` : `<video src="${u}" controls autoplay style="max-width:100%;"></video>`;
-        m.classList.remove('hidden'); m.style.display='flex';
-    };
+    window.previewMedia = (u,t) => { const m = document.getElementById('media-preview-modal'); const c = document.getElementById('preview-container'); c.innerHTML=''; const dl = document.getElementById('preview-download-btn'); if(dl) { dl.href=u; dl.download=`f_${Date.now()}`; } c.innerHTML = t==='image' ? `<img src="${u}" style="max-width:100%;max-height:100vh;">` : `<video src="${u}" controls autoplay style="max-width:100%;"></video>`; m.classList.remove('hidden'); m.style.display='flex'; };
     window.closePreview = () => document.getElementById('media-preview-modal').classList.add('hidden');
     window.playVoice = (u,id) => { const a = new Audio(u); a.play(); const b = document.getElementById(id); if(b) { b.classList.add('playing'); a.onended=()=>b.classList.remove('playing'); } };
-    window.handleAudio = (act, u) => { 
-        if(!globalAudio) globalAudio=new Audio(); 
-        if(act==='play') { globalAudio.src=u; globalAudio.play(); } 
-        else if(act==='pause') globalAudio.pause(); 
-        else { globalAudio.pause(); globalAudio.currentTime=0; } 
-    };
+    window.handleAudio = (act, u) => { if(!globalAudio) globalAudio=new Audio(); if(act==='play') { globalAudio.src=u; globalAudio.play(); } else if(act==='pause') globalAudio.pause(); else { globalAudio.pause(); globalAudio.currentTime=0; } };
     window.editMyName = () => { const n=prompt("Name", db.profile.nickname); if(n) { db.profile.nickname=n; saveDB(); initUI(); } };
     document.querySelector('.user-pill').onclick = window.editMyName;
     window.editFriendName = () => { if(activeChatId) { const f=db.friends.find(x=>x.id===activeChatId); const n=prompt("Alias:", f.alias||f.id); if(n){ f.alias=n; saveDB(); document.getElementById('chat-partner-name').innerText=n; renderFriends(); } } };
-    window.editContactAlias = (fid) => { const f=db.friends.find(x=>x.id===fid); if(f) { const n=prompt("Alias:", f.alias||f.id); if(n){ f.alias=n; saveDB(); renderFriends(); } } };
     document.querySelector('.chat-user-info').onclick = window.editFriendName;
-
+    
     function renderFriends() {
         const list = document.getElementById('friends-list-container'); list.innerHTML='';
         db.friends.forEach(f => {
             const div = document.createElement('div'); div.className=`k-list-item ${f.unread?'shake-active':''}`;
             const statusHtml = f.unread ? `<div class="marquee-box"><div class="marquee-text">📢 MESSAGE COMING...</div></div>` : `<div style="font-size:12px;color:#999;">Tap to chat</div>`;
-            div.innerHTML = `<div style="display:flex;align-items:center;gap:10px;"><img src="https://api.dicebear.com/7.x/notionists/svg?seed=${f.id}" style="width:45px;border-radius:10px;"><div style="flex:1;"><div style="font-weight:800;">${f.alias||f.id}</div>${statusHtml}</div><div class="list-edit-btn" onclick="event.stopPropagation();window.editContactAlias('${f.id}')">✎</div></div>`;
+            div.innerHTML = `<div style="display:flex;align-items:center;gap:10px;"><img src="https://api.dicebear.com/7.x/notionists/svg?seed=${f.id}" style="width:45px;border-radius:10px;"><div style="flex:1;"><div style="font-weight:800;">${f.alias||f.id}</div>${statusHtml}</div></div>`;
             div.onclick = () => openChat(f.id);
             list.appendChild(div);
         });
     }
+
+    // Init
+    const initUI = () => {
+        document.getElementById('my-id-display').innerText = MY_ID;
+        document.getElementById('my-nickname').innerText = db.profile.nickname;
+        document.getElementById('my-avatar').src = `https://api.dicebear.com/7.x/notionists/svg?seed=${db.profile.avatarSeed}`;
+        renderFriends();
+        setTimeout(() => { const q = document.getElementById("qrcode"); if(q && window.QRCode) { q.innerHTML=''; new QRCode(q, {text:MY_ID, width:60, height:60, colorDark:"#59BC10", colorLight:"#FFFFFF"}); } }, 500);
+        
+        // 表情
+        const g = document.getElementById('sticker-grid'); g.innerHTML = '';
+        const gifs = ["https://media.tenor.com/2nZ2_2s_2zAAAAAi/pepe-frog.gif", "https://media.tenor.com/Xk_Xk_XkAAAAi/pepe-dance.gif", "https://media.tenor.com/8x_8x_8xAAAAi/pepe-sad.gif", "https://media.tenor.com/9y_9y_9yAAAAi/pepe-happy.gif"];
+        gifs.forEach(s=>{
+            const i=document.createElement('img'); i.src=s; i.className='sticker-item'; i.style.cssText="width:60px;height:60px;object-fit:contain;cursor:pointer;";
+            i.onclick=()=>{ if(activeChatId){ sendData('sticker', s); document.getElementById('sticker-panel').classList.add('hidden'); }};
+            g.appendChild(i);
+        });
+        document.getElementById('sticker-btn').onclick = () => document.getElementById('sticker-panel').classList.toggle('hidden');
+        
+        // 拨号盘
+        const b = document.querySelector('#add-overlay .modal-body');
+        b.innerHTML = `<div class="numpad-container"><div id="dial-display" class="id-display-screen">____</div><div class="numpad-grid"><div class="num-btn" onclick="dial(1)">1</div><div class="num-btn" onclick="dial(2)">2</div><div class="num-btn" onclick="dial(3)">3</div><div class="num-btn" onclick="dial(4)">4</div><div class="num-btn" onclick="dial(5)">5</div><div class="num-btn" onclick="dial(6)">6</div><div class="num-btn" onclick="dial(7)">7</div><div class="num-btn" onclick="dial(8)">8</div><div class="num-btn" onclick="dial(9)">9</div><div class="num-btn clear" onclick="dial('C')">C</div><div class="num-btn" onclick="dial(0)">0</div><div class="num-btn connect" onclick="dial('OK')">🤝</div></div></div>`;
+    };
+
+    // Global Dial
+    let dialInput = "";
+    window.dial = k => {
+        const d = document.getElementById('dial-display');
+        if(k==='C') { dialInput=""; d.innerText="____"; return; }
+        if(k==='OK') { 
+            if(dialInput.length===4 && dialInput!==MY_ID) { 
+                window.closeAllModals();
+                if(!db.friends.find(f=>f.id===dialInput)) { db.friends.push({id:dialInput, addedAt:Date.now(), alias:`User ${dialInput}`}); saveDB(); renderFriends(); }
+                openChat(dialInput);
+            } else alert("Invalid"); return; 
+        }
+        if(dialInput.length<4) { dialInput+=k; d.innerText=dialInput.padEnd(4,'_'); }
+    };
+    document.getElementById('add-id-btn').onclick = () => { document.getElementById('add-overlay').classList.remove('hidden'); dialInput=""; document.getElementById('dial-display').innerText="____"; };
+    document.getElementById('scan-btn').onclick = () => {
+        document.getElementById('qr-overlay').classList.remove('hidden');
+        setTimeout(()=>{ if(window.Html5Qrcode) { const s=new Html5Qrcode("qr-reader"); window.scanner=s; s.start({facingMode:"environment"}, {fps:10}, t=>{ s.stop().then(()=>{ window.closeAllModals(); if(t.length===4) { if(!db.friends.find(f=>f.id===t)) { db.friends.push({id:t, addedAt:Date.now(), alias:`User ${t}`}); saveDB(); renderFriends(); } openChat(t); } }); }); } }, 300);
+    };
 
     initUI();
     document.body.addEventListener('click', () => document.getElementById('msg-sound').load(), {once:true});
