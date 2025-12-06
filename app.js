@@ -10,8 +10,6 @@ document.addEventListener('DOMContentLoaded', () => {
         body { background: #F2F2F7; font-family: -apple-system, sans-serif; -webkit-tap-highlight-color: transparent; }
         .defi-nav { display: none !important; }
         .scroll-content { padding-bottom: 30px !important; }
-        
-        /* 列表项 */
         .k-list-item { background: #fff; border-radius: 14px; padding: 14px; margin-bottom: 10px; box-shadow: var(--shadow-sm); transition: transform 0.1s; position: relative; }
         .k-list-item:active { transform: scale(0.98); background: #f2f2f2; }
         .list-edit-btn { padding: 8px; color: #999; font-size: 16px; cursor: pointer; z-index: 10; margin-left: auto; }
@@ -34,24 +32,23 @@ document.addEventListener('DOMContentLoaded', () => {
         .thumb-box { position: relative; display: inline-block; max-width: 200px; border-radius: 12px; overflow: hidden; background: #000; }
         .thumb-img { max-width: 100%; height: auto; display: block; object-fit: contain; }
         video.thumb-img { object-fit: cover; max-height: 200px; }
-        .sticker-img { width: 80px !important; height: 80px !important; object-fit: contain !important; }
+        .sticker-img { width: 100px !important; height: 100px !important; object-fit: contain !important; display: block; }
         
-        /* ★ Office 文档卡片修复 ★ */
+        /* ★ 文档卡片样式修复 ★ */
         .doc-card { 
             display: flex; align-items: center; gap: 12px; 
-            background: rgba(255,255,255,0.95); /* 确保背景不透明 */
-            padding: 12px; border-radius: 10px; color: #333; text-decoration: none; 
-            width: 100%; box-sizing: border-box; /* 撑满气泡 */
+            background: rgba(255,255,255,0.9); padding: 12px; 
+            border-radius: 10px; color: #333; text-decoration: none; 
+            width: 100%; box-sizing: border-box; min-width: 200px;
         }
-        .msg-row.self .doc-card { color: #000; /* 发送方气泡内文字颜色适配 */ }
+        .msg-row.self .doc-card { color: #000; }
         .doc-icon { font-size: 28px; flex-shrink: 0; }
         .doc-info { display: flex; flex-direction: column; overflow: hidden; flex: 1; min-width: 0; }
         .doc-name { 
-            font-weight: bold; font-size: 13px; 
-            white-space: nowrap; overflow: hidden; text-overflow: ellipsis; /* 防止溢出 */
-            display: block;
+            font-weight: bold; font-size: 13px; margin-bottom: 2px;
+            white-space: nowrap; overflow: hidden; text-overflow: ellipsis; 
         }
-        .doc-type { font-size: 10px; color: #666; margin-top: 2px; text-transform: uppercase; }
+        .doc-type { font-size: 10px; color: #666; text-transform: uppercase; font-weight: 600; }
 
         .voice-bubble { display: flex; align-items: center; gap: 8px; min-width: 100px; }
         .wave-visual { display: flex; align-items: center; gap: 3px; height: 16px; }
@@ -68,12 +65,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
         .edit-pen { margin-left: 8px; cursor: pointer; font-size: 14px; opacity: 0.7; }
         .cancel-btn { position: absolute; top:5px; right:5px; background:rgba(0,0,0,0.6); color:#fff; width:22px; height:22px; border-radius:50%; text-align:center; line-height:22px; font-size:12px; cursor:pointer; z-index:10; }
-        
         .modal-overlay { z-index: 100000 !important; background: rgba(0,0,0,0.6) !important; backdrop-filter: blur(5px); }
         .modal-header { background: var(--primary) !important; color: #fff; border:none; }
         .close-x { color: #fff !important; background: rgba(0,0,0,0.2) !important; }
         .modal-box { border-radius: 20px; overflow: hidden; border: none; }
-        
         .drag-overlay { display: none; z-index: 99999; }
         .drag-overlay.active { display: flex; }
         
@@ -91,7 +86,7 @@ document.addEventListener('DOMContentLoaded', () => {
     document.body.insertAdjacentHTML('beforeend', previewModalHTML);
 
     // --- 1. 数据 ---
-    const DB_KEY = 'pepe_v46_final_fixes';
+    const DB_KEY = 'pepe_v45_final_omega';
     const CHUNK_SIZE = 12 * 1024;
     let db;
     
@@ -161,7 +156,7 @@ document.addEventListener('DOMContentLoaded', () => {
         else if(msg.type==='image') html=`<div class="bubble" style="padding:4px; background:transparent; box-shadow:none;"><div class="thumb-box" onclick="previewMedia('${msg.content}','image')"><img src="${msg.content}" class="thumb-img"></div></div>`;
         else if(msg.type==='video') html=`<div class="bubble" style="padding:4px; background:transparent; box-shadow:none;"><div class="thumb-box" onclick="previewMedia('${msg.content}','video')"><video src="${msg.content}#t=0.1" class="thumb-img" preload="metadata" muted></video><div style="position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); color:#fff; font-size:30px;">▶</div></div></div>`;
         else if(msg.type==='file') {
-            // ★ 修复：文档卡片样式 ★
+            // ★ 文档样式优化 ★
             const lowerName = msg.fileName.toLowerCase();
             let icon = '📂';
             if(lowerName.match(/\.(doc|docx)$/)) icon = '📝';
@@ -170,12 +165,12 @@ document.addEventListener('DOMContentLoaded', () => {
             else if(lowerName.match(/\.pdf$/)) icon = '📕';
 
             html = `
-                <div class="bubble" style="padding:5px; width: 220px;">
+                <div class="bubble" style="padding:5px;">
                     <a class="doc-card" href="${msg.content}" download="${msg.fileName}">
                         <div class="doc-icon">${icon}</div>
                         <div class="doc-info">
                             <div class="doc-name">${msg.fileName}</div>
-                            <div class="doc-type">CLICK TO SAVE</div>
+                            <div class="doc-type">CLICK TO OPEN</div>
                         </div>
                     </a>
                 </div>`;
@@ -191,18 +186,22 @@ document.addEventListener('DOMContentLoaded', () => {
                 dataChannel.send(JSON.stringify({ type, content })); 
                 const msgObj = { type, content, isSelf: true, ts: Date.now() };
                 if(!db.history[activeChatId]) db.history[activeChatId] = [];
+                // ★ 修复：后台接收，保存完整对象 ★
                 db.history[activeChatId].push(msgObj); saveDB(); appendMsgDOM(msgObj, true);
                 return;
             } catch(e) {}
         }
-        if(socket && socket.connected) socket.emit('send_private', { targetId: activeChatId, content, type });
-        else { alert("Connecting..."); return; }
+        if(socket && socket.connected) {
+            socket.emit('send_private', { targetId: activeChatId, content, type });
+        } else {
+            alert("Connecting..."); return;
+        }
         const msgObj = { type, content, isSelf: true, ts: Date.now() };
         if(!db.history[activeChatId]) db.history[activeChatId] = [];
         db.history[activeChatId].push(msgObj); saveDB(); appendMsgDOM(msgObj, true);
     };
 
-    // ★ 修复：纯 UI 返回逻辑 (解决手势与按钮冲突) ★
+    // ★ 核心修复：纯 DOM 返回逻辑 (解决死循环) ★
     const closeChatUI = () => {
         const chatView = document.getElementById('view-chat');
         chatView.classList.remove('active');
@@ -213,10 +212,12 @@ document.addEventListener('DOMContentLoaded', () => {
     };
 
     window.goBack = () => { 
+        // 优先使用历史回退，触发 popstate
         if (window.history.state && window.history.state.chatOpen) {
-            window.history.back(); // 触发 popstate
+            window.history.back();
         } else {
-            closeChatUI(); // 兜底：直接关闭
+            // 兜底：如果历史记录乱了，直接关 UI
+            closeChatUI();
         }
     };
 
@@ -232,8 +233,10 @@ document.addEventListener('DOMContentLoaded', () => {
         chatView.classList.remove('right-sheet');
         chatView.classList.add('active');
         
-        // Push State for Android Back Button
-        window.history.pushState({ chatOpen: true, id: id }, "");
+        // 防抖动：只有当前没在聊天历史里才推
+        if (!window.history.state || window.history.state.id !== id) {
+            window.history.pushState({ chatOpen: true, id: id }, "");
+        }
 
         const container = document.getElementById('messages-container'); 
         container.innerHTML = '';
@@ -354,11 +357,10 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    // P2P
+    // P2P Logic
     const initP2P = async (targetId, isInitiator) => {
         if(peerConnection) peerConnection.close();
         isP2PReady = false;
-        // P2P 策略：开放所有传输方式
         const config = { iceServers: [{ urls: "stun:stun.l.google.com:19302" }], iceTransportPolicy: 'all' }; 
         peerConnection = new RTCPeerConnection(config);
         
@@ -394,7 +396,7 @@ document.addEventListener('DOMContentLoaded', () => {
     };
 
     function handleTunnelPacket(p, fid) {
-        if(p.type && !p.subType) { // P2P Msg
+        if(p.type && !p.subType) { 
             if(!db.history[fid]) db.history[fid] = [];
             db.history[fid].push({ type: p.type, content: p.content, isSelf: false, ts: Date.now() });
             saveDB();
@@ -428,21 +430,30 @@ document.addEventListener('DOMContentLoaded', () => {
                 else if(dl.fileType.startsWith('audio')) type = 'voice';
                 
                 const finalMsg = { type, content: url, fileName: dl.fileName, isSelf: false, ts: Date.now() };
+                
+                // 1. 如果在当前聊天，更新 UI
                 if(activeChatId === fid) replaceProgressWithContent(p.fileId, finalMsg);
+                
+                // 2. ★ 核心修复：后台接收，保存完整对象，不显示 File Saved 文本 ★
                 if(!db.history[fid]) db.history[fid] = [];
-                db.history[fid].push(finalMsg); saveDB();
+                db.history[fid].push(finalMsg); 
+                saveDB();
+                
                 delete activeDownloads[p.fileId];
                 document.getElementById('success-sound').play().catch(()=>{});
             }
         }
     }
 
+    // --- 队列发送 ---
     function addToQueue(file) { uploadQueue.push(file); processQueue(); }
     function processQueue() { if(isSending || uploadQueue.length === 0) return; const file = uploadQueue.shift(); sendFileChunked(file); }
 
     function sendFileChunked(file) {
         if(!activeChatId) { alert("Connect first"); return; }
+        // 尝试P2P
         const useP2P = isP2PReady && dataChannel && dataChannel.readyState === 'open';
+        // 如果P2P不通，必须有Socket
         if(!useP2P && (!socket || !socket.connected)) { alert("No Connection"); return; }
         
         isSending = true;
@@ -456,6 +467,7 @@ document.addEventListener('DOMContentLoaded', () => {
         let offset = 0; let lastTime = Date.now(); let lastBytes = 0; const total = file.size;
         const readNext = () => {
             if(cancelFlag[fileId]) { isSending = false; setTimeout(processQueue, 500); return; }
+            // 断线保护
             if(!useP2P && !socket.connected) { isSending = false; setTimeout(processQueue, 500); return; }
 
             if(offset >= total) {
@@ -470,6 +482,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 const finalMsg = { type, content: URL.createObjectURL(file), fileName: sendName, isSelf: true };
                 replaceProgressWithContent(fileId, finalMsg);
                 if(!db.history[activeChatId]) db.history[activeChatId] = [];
+                // ★ 修复：发送方也保存完整对象 ★
                 db.history[activeChatId].push(finalMsg); saveDB();
                 isSending = false; setTimeout(processQueue, 300); return;
             }
@@ -586,11 +599,10 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('chat-send-btn').onclick = handleSend;
     document.getElementById('chat-input').addEventListener('keypress', (e) => { if(e.key === 'Enter') handleSend(); });
 
-    // ★ 监听返回手势 (Core Fix) ★
+    // ★ 监听返回 (Core Fix) ★
     window.addEventListener('popstate', () => {
         const preview = document.getElementById('media-preview-modal');
         if(!preview.classList.contains('hidden')) { window.closePreview(); return; }
-        
         if (document.getElementById('view-chat').classList.contains('active')) {
             closeChatUI();
         }
@@ -631,7 +643,7 @@ document.addEventListener('DOMContentLoaded', () => {
         else { t.classList.add('hidden'); t.style.display='none'; v.classList.remove('hidden'); v.style.display='block'; b.innerText='⌨️'; }
     };
 
-    // ★ 修复：文件多选支持 ★
+    // ★ 多选修复 ★
     const fileInput = document.getElementById('chat-file-input');
     fileInput.setAttribute('multiple', ''); 
     document.getElementById('file-btn').onclick = () => fileInput.click();
@@ -639,12 +651,24 @@ document.addEventListener('DOMContentLoaded', () => {
         if(e.target.files.length > 0) Array.from(e.target.files).forEach(file => addToQueue(file));
     };
     
+    // ★ 动图表情 ★
     const sGrid = document.getElementById('sticker-grid');
     sGrid.innerHTML = '';
-    const gifs = [ "https://media.tenor.com/2nZ2_2s_2zAAAAAi/pepe-frog.gif", "https://media.tenor.com/Xk_Xk_XkAAAAi/pepe-dance.gif", "https://media.tenor.com/8x_8x_8xAAAAi/pepe-sad.gif", "https://media.tenor.com/9y_9y_9yAAAAi/pepe-happy.gif" ];
-    gifs.forEach(src => {
+    const gifs = [
+        "https://media.tenor.com/2nZ2_2s_2zAAAAAi/pepe-frog.gif",
+        "https://media.tenor.com/Xk_Xk_XkAAAAi/pepe-dance.gif",
+        "https://media.tenor.com/8x_8x_8xAAAAi/pepe-sad.gif",
+        "https://media.tenor.com/9y_9y_9yAAAAi/pepe-happy.gif",
+        "https://media.tenor.com/Q21qM6E5QOwAAAAi/pepe-love.gif",
+        "https://media.tenor.com/1-1-1-1-1-1-1-1-1-1-1-1/pepe-clown.gif",
+        "https://media.tenor.com/images/3071375525525795861/pepe-punch.gif",
+        "https://media.tenor.com/images/123/pepe-run.gif"
+    ];
+    gifs.forEach((src, index) => {
         const img = document.createElement('img');
         img.src = src;
+        // Fallback if gif fails
+        img.onerror = () => { img.src = `https://api.dicebear.com/7.x/fun-emoji/svg?seed=${index}`; };
         img.className='sticker-item'; 
         img.style.cssText = "width:60px; height:60px; object-fit:contain; cursor:pointer;";
         img.onclick = () => { if(activeChatId) { sendData('sticker', img.src); document.getElementById('sticker-panel').classList.add('hidden'); } };
