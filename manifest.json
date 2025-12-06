@@ -1,6 +1,6 @@
 {
-  "name": "PepeChat",
-  "short_name": "PepeChat",
+  "name": "PepeNet",
+  "short_name": "PepeNet",
   "start_url": ".",
   "display": "standalone",
   "background_color": "#59BC10",
@@ -9,12 +9,12 @@
   "scope": ".",
   "icons": [
     {
-      "src": "https://img.favpng.com/15/2/23/pepe-the-frog-internet-meme-know-your-meme-imgur-4chan-png-favpng-QZ3Tf1s63z3xWf1b1v1v1.png",
+      "src": "./icon.png",
       "sizes": "192x192",
       "type": "image/png"
     },
     {
-      "src": "https://img.favpng.com/15/2/23/pepe-the-frog-internet-meme-know-your-meme-imgur-4chan-png-favpng-QZ3Tf1s63z3xWf1b1v1v1.png",
+      "src": "./icon.png",
       "sizes": "512x512",
       "type": "image/png"
     }
