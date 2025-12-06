@@ -4,17 +4,17 @@
   "start_url": ".",
   "display": "standalone",
   "background_color": "#F2F2F7",
-  "theme_color": "#007AFF",
+  "theme_color": "#59BC10",
   "orientation": "portrait",
   "scope": ".",
   "icons": [
     {
-      "src": "https://api.dicebear.com/7.x/notionists/png?seed=icon&backgroundColor=007AFF",
+      "src": "https://cdn.statically.io/gh/twitter/twemoji/master/assets/72x72/1f438.png",
       "sizes": "192x192",
       "type": "image/png"
     },
     {
-      "src": "https://api.dicebear.com/7.x/notionists/png?seed=icon&backgroundColor=007AFF",
+      "src": "https://cdn.statically.io/gh/twitter/twemoji/master/assets/72x72/1f438.png",
       "sizes": "512x512",
       "type": "image/png"
     }
