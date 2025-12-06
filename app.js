@@ -2,31 +2,22 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const SERVER_URL = 'https://wojak-backend.onrender.com';
 
-    // --- 0. 样式重置 (★ 修复白字白底 + 底部遮挡 ★) ---
+    // --- 0. 样式定义 (保持 V56 完美 UI) ---
     const styleSheet = document.createElement("style");
     styleSheet.innerText = `
         :root { --pepe-green: #59BC10; --pepe-dark: #46960C; --bg: #F2F2F7; --danger: #FF3B30; }
         body { background: var(--bg); font-family: sans-serif; -webkit-tap-highlight-color: transparent; overscroll-behavior-y: none; }
-        .defi-nav { display: none !important; }
         
-        /* ★ 修复2：底部留白极大化，防止被输入栏遮挡 ★ */
-        .scroll-content { padding-bottom: 100px !important; }
-        #messages-container { 
-            padding: 15px; 
-            padding-bottom: 120px !important; /* 关键修复：留出足够高度 */
-            overflow-y: auto; 
-            display: flex; flex-direction: column; gap: 10px;
-            height: 100%; box-sizing: border-box;
-        }
+        .defi-nav { display: none !important; }
+        .scroll-content { padding-bottom: 80px !important; }
 
-        /* 头部 */
         .defi-header { display: flex; justify-content: space-between; align-items: center; padding: 10px 15px; background: #fff; z-index: 100; position: relative; border-bottom: 1px solid #eee; }
         .user-pill { display: flex; align-items: center; gap: 10px; background: #f5f5f5; padding: 5px 10px; border-radius: 20px; cursor: pointer; border: 1px solid #ddd; }
         .header-avatar { width: 32px; height: 32px; border-radius: 50%; background: #ddd; object-fit: cover; }
 
-        /* 底部输入栏 */
+        /* 底部栏 */
         .chat-footer { 
-            position: fixed; bottom: 0; left: 0; width: 100%; height: 70px; /* 固定高度 */
+            position: fixed; bottom: 0; left: 0; width: 100%; height: 70px; 
             background: #fff; display: flex; align-items: center; padding: 0 8px; 
             border-top: 1px solid #eee; z-index: 500; box-sizing: border-box;
             box-shadow: 0 -2px 10px rgba(0,0,0,0.05);
@@ -43,56 +34,42 @@ document.addEventListener('DOMContentLoaded', () => {
         .voice-btn-long.active { display: block !important; }
         .voice-btn-long.recording { animation: pulse 1s infinite; }
 
-        /* 列表 */
+        /* 气泡与列表 */
         .k-list-item { background: #fff; border-radius: 12px; padding: 12px; margin-bottom: 10px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); border: 1px solid #f0f0f0; position: relative; }
         .k-list-item:active { transform: scale(0.98); background: #f5f5f5; }
 
-        /* 气泡 */
+        #messages-container { padding: 15px; padding-bottom: 120px !important; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; height: 100%; box-sizing: border-box; }
+        .msg-row { display: flex; width: 100%; margin-bottom: 8px; }
+        .msg-row.self { justify-content: flex-end; }
+        .msg-row.other { justify-content: flex-start; }
         .bubble { padding: 10px 14px; border-radius: 16px; max-width: 75%; word-break: break-word; box-shadow: 0 1px 2px rgba(0,0,0,0.05); position: relative; }
         .msg-row.self .bubble { background: var(--pepe-green); color: #fff; }
         .msg-row.other .bubble { background: #fff; color: #000; border: 1px solid #eee; }
-        .bubble.clean { background: none !important; padding: 0 !important; box-shadow: none !important; border: none !important; }
+        .bubble.clean { background: transparent !important; padding: 0 !important; box-shadow: none !important; border: none !important; }
 
-        /* ★ 修复1：进度条配色 (解决白字白底) ★ */
-        .progress-wrapper { 
-            background: #fff; padding: 10px; border-radius: 10px; 
-            border: 2px solid var(--pepe-green); min-width: 180px; 
-            color: #333; /* 默认黑色字 */
-        }
-        /* 发送方进度条特殊处理 */
-        .msg-row.self .progress-wrapper { 
-            background: var(--pepe-dark); /* 深绿背景 */
-            color: #fff; /* 白色字 */
-            border-color: #fff;
-        }
+        /* 进度条 */
+        .progress-wrapper { background: #fff; padding: 10px; border-radius: 10px; border: 2px solid var(--pepe-green); min-width: 180px; color: #333; }
+        .msg-row.self .progress-wrapper { background: var(--pepe-dark); color: #fff; border-color: #fff; }
         .progress-track { height: 6px; background: rgba(0,0,0,0.1); border-radius: 3px; margin: 5px 0; overflow: hidden; }
         .msg-row.self .progress-track { background: rgba(255,255,255,0.3); }
         .progress-fill { height: 100%; width: 0%; transition: width 0.1s; }
         .msg-row.self .progress-fill { background: #fff; }
         .msg-row.other .progress-fill { background: var(--pepe-green); }
 
-        /* ★ 修复1：文档卡片配色 (强制黑字) ★ */
-        .doc-card { 
-            display: flex; align-items: center; gap: 10px; 
-            background: #fff; padding: 10px; border-radius: 10px; 
-            text-decoration: none; color: #333 !important; /* 强制黑字 */
-            border: 1px solid #eee; min-width: 200px; box-shadow: 0 2px 5px rgba(0,0,0,0.05);
-        }
+        /* 文档卡片 */
+        .doc-card { display: flex; align-items: center; gap: 10px; background: #fff; padding: 10px; border-radius: 10px; text-decoration: none; color: #333 !important; border: 1px solid #eee; min-width: 200px; box-shadow: 0 2px 5px rgba(0,0,0,0.05); }
         .doc-icon { font-size: 24px; }
         .doc-name { font-weight: bold; font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 150px; color: #000; }
         .doc-type { font-size: 10px; color: #888; font-weight: 900; }
 
-        /* 媒体 */
         .thumb-box { border-radius: 12px; overflow: hidden; background: #000; max-width: 200px; display: block; }
         .thumb-img { width: 100%; height: auto; display: block; }
         .sticker-img { width: 100px; height: 100px; object-fit: contain; display: block; }
-
-        /* 音频 */
+        
         .audio-player { display: flex; align-items: center; gap: 8px; }
         .audio-btn { width: 28px; height: 28px; border-radius: 50%; background: rgba(255,255,255,0.3); border: 1px solid rgba(255,255,255,0.5); color: inherit; display: flex; justify-content: center; align-items: center; cursor: pointer; }
         .msg-row.other .audio-btn { background: #f0f0f0; border-color: #ddd; color: #333; }
 
-        /* 杂项 */
         .shake-active { animation: shake 0.5s infinite; border-left: 4px solid var(--danger); }
         .marquee-text { display: inline-block; padding-left: 100%; animation: scroll 4s linear infinite; color: var(--danger); font-size: 10px; font-weight: 900; }
         @keyframes shake { 0%,100%{transform:translateX(0);} 25%{transform:translateX(-3px);} 75%{transform:translateX(3px);} }
@@ -119,7 +96,7 @@ document.addEventListener('DOMContentLoaded', () => {
     document.body.insertAdjacentHTML('beforeend', previewHTML);
 
     // --- 1. 数据 ---
-    const DB_KEY = 'pepe_v56_ui_patch';
+    const DB_KEY = 'pepe_v57_nav_fixed';
     const CHUNK_SIZE = 12 * 1024;
     let db, socket, activeChatId;
     let activeDownloads = {}, isSending = false, cancelFlag = {}, uploadQueue = [], globalAudio = null;
@@ -134,11 +111,10 @@ document.addEventListener('DOMContentLoaded', () => {
     const saveDB = () => localStorage.setItem(DB_KEY, JSON.stringify(db));
     const MY_ID = db.profile.id;
 
-    // --- 2. UI 初始化 ---
+    // --- 2. 界面初始化 ---
     const initUI = () => {
         document.getElementById('my-id-display').innerText = MY_ID;
         document.getElementById('my-nickname').innerText = db.profile.nickname;
-        // 强制注入图标
         let link = document.querySelector("link[rel*='icon']") || document.createElement('link');
         link.type = 'image/png'; link.rel = 'apple-touch-icon'; link.href = './icon.png';
         document.getElementsByTagName('head')[0].appendChild(link);
@@ -152,7 +128,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }, 500);
     };
 
-    // --- 3. 网络 ---
+    // --- 3. 网络 (隧道模式) ---
     if(!SERVER_URL.includes('onrender')) alert("Config URL!");
     else {
         socket = io(SERVER_URL, { reconnection: true, transports: ['websocket'] });
@@ -161,10 +137,13 @@ document.addEventListener('DOMContentLoaded', () => {
             socket.emit('register', MY_ID); 
             isSending = false; processQueue();
         });
+        
         socket.on('receive_msg', (msg) => {
             const fid = msg.from;
-            let friend = db.friends.find(f=>f.id===fid);
-            if(!friend) { friend = { id: fid, addedAt: Date.now(), alias: `User ${fid}`, unread: false }; db.friends.push(friend); }
+            if(!db.friends.find(f=>f.id===fid)) {
+                db.friends.push({ id: fid, addedAt: Date.now(), alias: `User ${fid}`, unread: false });
+            }
+            const friend = db.friends.find(f=>f.id===fid);
 
             if(msg.type === 'tunnel_file_packet') {
                 try { const p = JSON.parse(msg.content); handleTunnelPacket(p, fid, friend); } catch(e){} return;
@@ -206,7 +185,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 updateProgressUI(p.fileId, dl.receivedSize, dl.totalSize, spd);
                 dl.lastTime = now; dl.lastBytes = dl.receivedSize;
             }
-        } else if(p.subType === 'end') {
+        } 
+        else if(p.subType === 'end') {
             if(activeDownloads[p.fileId] === 'cancelled') return;
             const dl = activeDownloads[p.fileId];
             if(dl) {
@@ -216,11 +196,13 @@ document.addEventListener('DOMContentLoaded', () => {
                 if(dl.fileType.startsWith('image')) type = 'image';
                 else if(dl.fileType.startsWith('video')) type = 'video';
                 else if(dl.fileType.startsWith('audio')) type = 'voice';
-                
                 const finalMsg = { type, content: url, fileName: dl.fileName, isSelf: false, ts: Date.now() };
+                
                 if(activeChatId === fid) replaceProgressWithContent(p.fileId, finalMsg);
+                
                 if(!db.history[fid]) db.history[fid] = [];
                 db.history[fid].push(finalMsg); saveDB();
+                
                 if(activeChatId !== fid && friend) { friend.unread = true; saveDB(); renderFriends(); }
                 delete activeDownloads[p.fileId];
                 document.getElementById('success-sound').play().catch(()=>{});
@@ -248,6 +230,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (cancelFlag[fileId] || !socket.connected) { isSending = false; setTimeout(processQueue, 500); return; }
             if (offset >= total) {
                 socket.emit('send_private', { targetId: activeChatId, type: 'tunnel_file_packet', content: JSON.stringify({ subType: 'end', fileId }) });
+                
                 let type = 'file';
                 if(sendType.startsWith('image')) type = 'image';
                 else if(sendType.startsWith('video')) type = 'video';
@@ -288,13 +271,45 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    // --- 5. 交互 ---
+    // --- 5. 界面交互 ---
+    
+    // ★ 修复：强制关闭 UI 函数 ★
+    function closeChatUI() {
+        const view = document.getElementById('view-chat');
+        view.classList.remove('active');
+        setTimeout(() => view.classList.add('right-sheet'), 50);
+        activeChatId = null;
+        renderFriends();
+    }
+
+    // ★ 修复：返回键逻辑 ★
+    window.goBack = () => {
+        if (window.history.state && window.history.state.chat) {
+            window.history.back(); // 调用浏览器回退
+        } else {
+            closeChatUI(); // 兜底
+        }
+    };
+    document.getElementById('chat-back-btn').onclick = window.goBack;
+
+    // ★ 修复：监听 Popstate ★
+    window.addEventListener('popstate', () => {
+        const prev = document.getElementById('media-preview-modal');
+        if(!prev.classList.contains('hidden')) { window.closePreview(); return; }
+        
+        // 如果聊天是打开的，就关闭它
+        if (document.getElementById('view-chat').classList.contains('active')) {
+            closeChatUI();
+        }
+    });
+
     function openChat(id) {
         try{ if(window.speechSynthesis) window.speechSynthesis.cancel(); }catch(e){}
         activeChatId = id;
         const f = db.friends.find(x => x.id === id);
         document.getElementById('chat-partner-name').innerText = f ? (f.alias || f.id) : id;
         
+        // UI 重置
         document.getElementById('text-input-wrapper').classList.remove('hidden');
         document.getElementById('voice-record-btn').classList.remove('active');
         document.getElementById('mode-switch-btn').innerText = "🎤";
@@ -303,28 +318,14 @@ document.addEventListener('DOMContentLoaded', () => {
         view.classList.remove('right-sheet');
         view.classList.add('active');
         
-        window.history.pushState({ chat: true }, "");
+        // ★ 关键：推入历史记录 ★
+        window.history.pushState({ chat: true }, "", "#chat");
         
         const box = document.getElementById('messages-container');
         box.innerHTML = '';
         const msgs = db.history[id] || [];
         msgs.forEach(m => appendMsgDOM(m));
     }
-
-    window.goBack = () => {
-        if(history.state && history.state.chat) history.back();
-        else {
-            document.getElementById('view-chat').classList.remove('active');
-            setTimeout(() => document.getElementById('view-chat').classList.add('right-sheet'), 300);
-            activeChatId = null; renderFriends();
-        }
-    };
-    window.addEventListener('popstate', () => {
-        if(document.getElementById('media-preview-modal').style.display!=='none') { window.closePreview(); return; }
-        document.getElementById('view-chat').classList.remove('active');
-        setTimeout(() => document.getElementById('view-chat').classList.add('right-sheet'), 300);
-        activeChatId = null; renderFriends();
-    });
 
     function appendMsgDOM(msg) {
         const box = document.getElementById('messages-container');
@@ -338,13 +339,12 @@ document.addEventListener('DOMContentLoaded', () => {
             html = `<div class="bubble audio-player"><span>🎤</span><button class="audio-btn" onclick="handleAudio('play','${msg.content}')">▶</button><button class="audio-btn" onclick="handleAudio('pause')">⏸</button><button class="audio-btn" onclick="handleAudio('stop')">⏹</button></div>`;
         } 
         else if(msg.type === 'image') html = `<div class="bubble clean"><div class="thumb-box" onclick="previewMedia('${msg.content}','image')"><img src="${msg.content}" class="thumb-img"></div></div>`;
-        else if(msg.type === 'video') html = `<div class="bubble clean"><div class="thumb-box" onclick="previewMedia('${msg.content}','video')"><video src="${msg.content}#t=0.1" class="thumb-img" preload="metadata" muted></video><div style="position:absolute;top:40%;left:45%;color:#fff;font-size:24px;">▶</div></div></div>`;
+        else if(msg.type === 'video') html = `<div class="bubble clean"><div class="thumb-box" onclick="previewMedia('${msg.content}','video')"><video src="${msg.content}#t=0.1" class="thumb-img" preload="metadata" muted></video><div style="position:absolute;top:40%;left:45%;color:#fff;font-size:30px;">▶</div></div></div>`;
         else if(msg.type === 'file') {
             let icon = '📄';
             if(msg.fileName.match(/\.(doc|docx)$/i)) icon='📝';
             else if(msg.fileName.match(/\.(xls|xlsx)$/i)) icon='📊';
             else if(msg.fileName.match(/\.(ppt|pptx)$/i)) icon='📉';
-            // ★ 修复：黑色字体 + 白色背景 ★
             html = `<div class="bubble clean"><a class="doc-card" href="${msg.content}" download="${msg.fileName}"><div class="doc-icon">${icon}</div><div class="doc-info"><div class="doc-name">${msg.fileName}</div><div class="doc-type">CLICK SAVE</div></div></a></div>`;
         }
         div.innerHTML = html; box.appendChild(div); box.scrollTop = box.scrollHeight;
@@ -354,7 +354,6 @@ document.addEventListener('DOMContentLoaded', () => {
         if(activeChatId !== chatId) return;
         const box = document.getElementById('messages-container');
         const div = document.createElement('div'); div.id = `progress-row-${fileId}`; div.className = `msg-row ${isSelf?'self':'other'}`;
-        // ★ 修复：进度条颜色 (self = 深绿底白字) ★
         div.innerHTML = `<div class="bubble clean"><div class="progress-wrapper"><div style="font-weight:bold;margin-bottom:4px;overflow:hidden;text-overflow:ellipsis;">${fileName}</div><div class="progress-track"><div id="bar-${fileId}" class="progress-fill"></div></div><div style="display:flex;justify-content:space-between;font-size:10px;"><span id="spd-${fileId}">0K/s</span><span id="pct-${fileId}">0%</span></div><div class="cancel-btn" onclick="cancelTransfer('${fileId}', ${isSelf})">✕</div></div></div>`;
         box.appendChild(div); box.scrollTop = box.scrollHeight;
     }
@@ -368,9 +367,8 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     function b64toBlob(b,t) { try{ const bin=atob(b); const a=new Uint8Array(bin.length); for(let i=0;i<bin.length;i++) a[i]=bin.charCodeAt(i); return new Blob([a],{type:t}); }catch(e){ return new Blob([],{type:t}); } }
 
-    // --- 6. 事件 ---
+    // --- 6. 按钮绑定 ---
     document.getElementById('chat-send-btn').onclick = () => { const t=document.getElementById('chat-input'); if(t.value.trim()){ sendData('text', t.value); t.value=''; }};
-    document.getElementById('chat-back-btn').onclick = window.goBack;
     document.getElementById('chat-input').addEventListener('keypress', e=>{if(e.key==='Enter') document.getElementById('chat-send-btn').click();});
 
     document.getElementById('mode-switch-btn').onclick = () => {
