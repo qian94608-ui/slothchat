@@ -3,7 +3,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // ★★★ 请填入你的 Render 地址 ★★★
     const SERVER_URL = 'https://wojak-backend.onrender.com';
 
-    // --- 0. 动态样式 (保持不变) ---
+    // --- 0. 动态样式 ---
     const styleSheet = document.createElement("style");
     styleSheet.innerText = `
         @keyframes wave { 0% { transform: scaleY(1); } 50% { transform: scaleY(2.5); background: #fff; } 100% { transform: scaleY(1); } }
@@ -37,9 +37,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const DB_KEY = 'pepe_v33_final';
     const CHUNK_SIZE = 16 * 1024; // 16KB 分片
     const activeDownloads = {};   // 接收队列
-    const orphanChunks = {};      // 孤儿块队列
-    let currentUpload = null;     // 发送任务
-    let uploadTimer = null;       // 发送定时器
+    let isSending = false;        // 发送锁
     
     // 预览逻辑
     window.previewMedia = (url, type) => {
@@ -160,16 +158,18 @@ document.addEventListener('DOMContentLoaded', () => {
         }, 300);
     };
 
-    // --- 4. 聊天与网络 (★ 重构：稳健接收逻辑) ---
+    // --- 4. 聊天与网络 (★ 修复：无状态接收逻辑) ---
     let socket = null;
     let activeChatId = null;
 
     if(!SERVER_URL.includes('onrender')) alert("Configure SERVER_URL!");
     else {
+        // 强制使用 websocket，避免轮询导致的延迟和断连
         socket = io(SERVER_URL, { 
             reconnection: true, 
             reconnectionAttempts: Infinity,
-            transports: ['websocket'] 
+            transports: ['websocket'],
+            upgrade: false
         });
         
         const registerSocket = () => { if(socket.connected) socket.emit('register', MY_ID); };
@@ -177,14 +177,11 @@ document.addEventListener('DOMContentLoaded', () => {
         socket.on('connect', () => {
             document.getElementById('conn-status').className = "status-dot green";
             registerSocket();
-            // 如果连接断开后恢复，且有正在进行的上传，尝试恢复发送（或由用户重试）
-            if(currentUpload && currentUpload.step === 'streaming') {
-                processNextStep();
-            }
+            isSending = false; // 重连后释放锁
         });
 
         socket.on('reconnect', () => { registerSocket(); });
-        socket.on('disconnect', () => { document.getElementById('conn-status').className = "status-dot red"; });
+        socket.on('disconnect', () => { document.getElementById('conn-status').className = "status-dot red"; isSending = false; });
         
         document.addEventListener('visibilitychange', () => {
             if (document.visibilityState === 'visible') {
@@ -199,78 +196,72 @@ document.addEventListener('DOMContentLoaded', () => {
                 db.friends.push({ id: fid, addedAt: Date.now(), alias: `User ${fid}` }); renderFriends();
             }
 
-            // --- A. 发送端收到的确认信号 ---
-            if (msg.type === 'sys_ack_start') {
-                if (currentUpload && currentUpload.fileId === msg.fileId && currentUpload.step === 'handshake') {
-                    // 握手成功，转入推流模式
-                    currentUpload.step = 'streaming';
-                    processNextStep(); 
-                }
-                return;
-            }
-            if (msg.type === 'sys_ack_end') {
-                if (currentUpload && currentUpload.fileId === msg.fileId && currentUpload.step === 'finishing') {
-                    // 对方确认结束，清理本地任务
-                    completeUpload();
-                }
-                return;
-            }
-
-            // --- B. 接收端逻辑 ---
+            // --- ★ 核心接收逻辑：懒加载模式 ---
             
-            // 1. 收到文件 Start
-            if (msg.type === 'file_start') {
-                // 如果已存在任务（可能是重复的Start包），忽略或重置
+            // 收到文件块 (无论是否收到过Start，只要有meta信息就创建任务)
+            if (msg.type === 'file_chunk_v2') {
+                // 如果是新任务，立即初始化
                 if (!activeDownloads[msg.fileId]) {
                     activeDownloads[msg.fileId] = {
                         chunks: [],
                         totalSize: msg.totalSize || 0,
                         receivedSize: 0,
-                        startTime: Date.now(),
-                        lastBytes: 0, lastTime: Date.now(),
-                        fileName: msg.fileName || `file_${msg.fileId}`,
-                        fileType: msg.fileType || 'application/octet-stream'
+                        lastBytes: 0, 
+                        lastTime: Date.now(),
+                        fileName: msg.fileName, // ★ 从 Chunk 中直接获取文件名，永不丢失
+                        fileType: msg.fileType
                     };
-                    if(activeChatId === fid) appendProgressBubble(fid, msg.fileId, activeDownloads[msg.fileId].fileName, msg.fileType, false);
-                    
-                    // ★ 检查孤儿队列：之前有没有先到的块？
-                    if (orphanChunks[msg.fileId]) {
-                        orphanChunks[msg.fileId].forEach(c => processReceivedChunk(msg.fileId, c));
-                        delete orphanChunks[msg.fileId];
-                    }
+                    if(activeChatId === fid) appendProgressBubble(fid, msg.fileId, msg.fileName, msg.fileType, false);
                 }
-                // ★ 立即回复 ACK (多次收到Start就多次回复，确保发送端收到)
-                socket.emit('send_private', { targetId: fid, type: 'sys_ack_start', fileId: msg.fileId });
-                return;
-            }
 
-            // 2. 收到文件 Chunk
-            if (msg.type === 'file_chunk') {
-                if (activeDownloads[msg.fileId]) {
-                    processReceivedChunk(msg.fileId, msg.chunk);
-                } else {
-                    // ★ 还没收到 Start？存入孤儿队列，等 Start 来了再合并
-                    if (!orphanChunks[msg.fileId]) orphanChunks[msg.fileId] = [];
-                    orphanChunks[msg.fileId].push(msg.chunk);
-                    // 可以在这里请求重发 Start，但简单的 Ack 机制通常能通过重试解决
-                }
-                return;
-            }
-
-            // 3. 收到文件 End
-            if (msg.type === 'file_end') {
-                // 收到结束信号，立即回复 ACK
-                socket.emit('send_private', { targetId: fid, type: 'sys_ack_end', fileId: msg.fileId });
+                const download = activeDownloads[msg.fileId];
+                download.chunks.push(msg.chunk); // chunk是base64
+                // 估算大小
+                download.receivedSize += Math.floor(msg.chunk.length * 0.75);
                 
+                // UI 更新
+                const now = Date.now();
+                if(now - download.lastTime > 500) {
+                    const bytesDiff = download.receivedSize - download.lastBytes;
+                    const timeDiff = (now - download.lastTime) / 1000;
+                    const speed = (bytesDiff / 1024) / timeDiff; 
+                    download.lastBytes = download.receivedSize; download.lastTime = now;
+                    updateProgressUI(msg.fileId, download.receivedSize, download.totalSize, speed);
+                }
+                return;
+            }
+
+            // 收到文件结束
+            if (msg.type === 'file_end_v2') {
                 const download = activeDownloads[msg.fileId];
                 if(download) {
-                    finalizeDownload(download, msg.fileId, fid);
+                    const blob = b64toBlob(download.chunks.join(''), download.fileType);
+                    const fileUrl = URL.createObjectURL(blob);
+                    
+                    let finalType = 'file';
+                    if (download.fileType.startsWith('image')) finalType = 'image';
+                    else if (download.fileType.startsWith('video')) finalType = 'video';
+                    else if (download.fileType.startsWith('audio')) finalType = 'voice';
+
+                    const finalMsg = {
+                        type: finalType, content: fileUrl, 
+                        fileName: download.fileName, 
+                        isSelf: false, ts: Date.now()
+                    };
+                    replaceProgressWithContent(msg.fileId, finalMsg);
+                    
+                    if(!db.history[fid]) db.history[fid] = [];
+                    const saveMsg = { ...finalMsg, content: '[File Saved]', type: 'text' };
+                    db.history[fid].push(saveMsg); saveDB();
+                    
+                    delete activeDownloads[msg.fileId];
+                    document.getElementById('success-sound').play().catch(()=>{});
                 }
                 return;
             }
 
             // 普通消息
-            if (msg.type !== 'file_start' && msg.type !== 'file_chunk' && msg.type !== 'file_end' && !msg.type.startsWith('sys_')) {
+            if (!msg.type.startsWith('file_')) {
                 if(!db.history[fid]) db.history[fid] = [];
                 db.history[fid].push({ type: msg.type, content: msg.content, isSelf: false, ts: msg.timestamp });
                 saveDB(); renderFriends();
@@ -280,182 +271,99 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    // 接收端辅助：处理单个块
-    function processReceivedChunk(fileId, chunkBase64) {
-        const download = activeDownloads[fileId];
-        if (!download) return;
-        
-        download.chunks.push(chunkBase64);
-        download.receivedSize += Math.floor(chunkBase64.length * 0.75); // 估算
-        
-        const now = Date.now();
-        if(now - download.lastTime > 500) {
-            const bytesDiff = download.receivedSize - download.lastBytes;
-            const timeDiff = (now - download.lastTime) / 1000;
-            const speed = (bytesDiff / 1024) / timeDiff; 
-            download.lastBytes = download.receivedSize; download.lastTime = now;
-            updateProgressUI(fileId, download.receivedSize, download.totalSize, speed);
-        }
-    }
-
-    // 接收端辅助：完成下载
-    function finalizeDownload(download, fileId, fid) {
-        const blob = b64toBlob(download.chunks.join(''), download.fileType);
-        const fileUrl = URL.createObjectURL(blob);
-        
-        let finalType = 'file';
-        if (download.fileType.startsWith('image')) finalType = 'image';
-        else if (download.fileType.startsWith('video')) finalType = 'video';
-        else if (download.fileType.startsWith('audio')) finalType = 'voice';
-
-        const finalMsg = {
-            type: finalType, content: fileUrl, 
-            fileName: download.fileName, 
-            isSelf: false, ts: Date.now()
-        };
-        replaceProgressWithContent(fileId, finalMsg);
-        
-        if(!db.history[fid]) db.history[fid] = [];
-        const saveMsg = { ...finalMsg, content: '[File Saved]', type: 'text' };
-        db.history[fid].push(saveMsg); saveDB();
-        
-        delete activeDownloads[fileId];
-        document.getElementById('success-sound').play().catch(()=>{});
-    }
-
-
-    // --- 5. 发送逻辑 (★ 核心重构：状态机驱动) ---
-    
-    // 主循环驱动
-    function processNextStep() {
-        if (!currentUpload) return;
-        if (uploadTimer) clearTimeout(uploadTimer); // 清除旧定时器
-
-        // 1. 握手阶段 (Wait for Ack)
-        if (currentUpload.step === 'handshake') {
-            const now = Date.now();
-            if (now - currentUpload.lastActionTime > 1000) { // 每秒重试一次 Start
-                socket.emit('send_private', {
-                    targetId: currentUpload.targetId, type: 'file_start', fileId: currentUpload.fileId,
-                    fileName: currentUpload.sendName, fileType: currentUpload.sendType, totalSize: currentUpload.totalSize
-                });
-                currentUpload.lastActionTime = now;
-                currentUpload.retryCount++;
-                if (currentUpload.retryCount > 15) { // 15秒超时
-                    alert("Timeout: Receiver not responding.");
-                    currentUpload = null; return;
-                }
-            }
-            uploadTimer = setTimeout(processNextStep, 500); // Check loop
-            return;
-        }
-
-        // 2. 推流阶段 (Streaming)
-        if (currentUpload.step === 'streaming') {
-            if (!socket.connected) {
-                // 网络断开，等待连接恢复，暂停发送
-                uploadTimer = setTimeout(processNextStep, 1000); 
-                return; 
-            }
-
-            if (currentUpload.offset >= currentUpload.totalSize) {
-                // 发送完毕，进入结束握手
-                currentUpload.step = 'finishing';
-                currentUpload.retryCount = 0;
-                processNextStep();
-                return;
-            }
-
-            // 读取并发送一块
-            const chunkBlob = currentUpload.file.slice(currentUpload.offset, currentUpload.offset + CHUNK_SIZE);
-            const reader = new FileReader();
-            
-            reader.onload = (e) => {
-                if(!currentUpload) return;
-                const base64Chunk = e.target.result.split(',')[1];
-                
-                socket.emit('send_private', { 
-                    targetId: currentUpload.targetId, 
-                    type: 'file_chunk', 
-                    fileId: currentUpload.fileId, 
-                    chunk: base64Chunk 
-                });
-                
-                currentUpload.offset += chunkBlob.size;
-                
-                // 更新UI
-                const now = Date.now();
-                if(now - currentUpload.lastUpdate > 200) {
-                    const speed = ((currentUpload.offset - currentUpload.lastBytes) / 1024) / ((now - currentUpload.lastUpdate)/1000);
-                    updateProgressUI(currentUpload.fileId, currentUpload.offset, currentUpload.totalSize, speed);
-                    currentUpload.lastUpdate = now; currentUpload.lastBytes = currentUpload.offset;
-                }
-
-                // ★ 30ms 间隔继续发送下一块
-                uploadTimer = setTimeout(processNextStep, 30);
-            };
-            
-            reader.onerror = () => { alert("Read Error"); currentUpload = null; };
-            reader.readAsDataURL(chunkBlob);
-            return;
-        }
-
-        // 3. 结束阶段 (Wait for End Ack)
-        if (currentUpload.step === 'finishing') {
-            const now = Date.now();
-            if (now - currentUpload.lastActionTime > 1000) {
-                socket.emit('send_private', { targetId: currentUpload.targetId, type: 'file_end', fileId: currentUpload.fileId });
-                currentUpload.lastActionTime = now;
-                currentUpload.retryCount++;
-                if (currentUpload.retryCount > 10) {
-                    // 超时也算完成（可能Ack丢了但对方收到了）
-                    completeUpload(); 
-                    return;
-                }
-            }
-            uploadTimer = setTimeout(processNextStep, 500);
-            return;
-        }
-    }
-
-    function completeUpload() {
-        if (!currentUpload) return;
-        const { sendType, file, sendName, fileId, targetId } = currentUpload;
-        
-        let localMsgType = 'file';
-        if (sendType.startsWith('image')) localMsgType = 'image';
-        else if (sendType.startsWith('video')) localMsgType = 'video';
-        else if (sendType.startsWith('audio')) localMsgType = 'voice';
-
-        const finalMsg = { type: localMsgType, content: URL.createObjectURL(file), fileName: sendName, isSelf: true };
-        replaceProgressWithContent(fileId, finalMsg);
-        
-        if(!db.history[targetId]) db.history[targetId] = [];
-        db.history[targetId].push({ ...finalMsg, content: '[File Sent]', type: 'text' }); saveDB();
-        
-        currentUpload = null;
-    }
+    // --- 5. 发送逻辑 (★ 核心修复：冗余传输，不等待握手) ---
 
     function sendFileChunked(file, overrideType = null) {
         if(!activeChatId || !socket) return;
-        if(currentUpload) { alert("Sending another file..."); return; }
+        if(isSending) { alert("Sending... Please wait."); return; }
         if(!socket.connected) { alert("No Connection"); return; }
 
+        isSending = true; // 上锁
         const fileId = Date.now() + '-' + Math.random().toString(36).substr(2, 9);
+        // 强制确保文件名存在
         const sendName = (file.name && file.name.length > 0) ? file.name : `file_${Date.now()}`;
         const sendType = overrideType || file.type || 'application/octet-stream';
-        
-        // 初始化任务
-        currentUpload = {
-            step: 'handshake', // handshake -> streaming -> finishing
-            file, fileId, targetId: activeChatId, sendName, sendType, totalSize: file.size,
-            offset: 0, lastUpdate: Date.now(), lastBytes: 0, lastActionTime: 0, retryCount: 0
-        };
+        const totalSize = file.size;
 
         appendProgressBubble(activeChatId, fileId, sendName, sendType, true);
-        
-        // 启动状态机
-        processNextStep();
+
+        let offset = 0;
+        let lastUpdate = Date.now();
+        let lastBytes = 0;
+
+        // ★ 核心 Loop：使用 readAsDataURL 切片读取，每片都带上 Header 信息
+        const readNextChunk = () => {
+            // 安全检查：如果连接断开，停止发送
+            if(!socket.connected) {
+                isSending = false;
+                alert("Network lost. Upload stopped.");
+                return; 
+            }
+
+            if (offset >= totalSize) {
+                // 发送完毕
+                socket.emit('send_private', { 
+                    targetId: activeChatId, 
+                    type: 'file_end_v2', 
+                    fileId: fileId 
+                });
+                
+                let localMsgType = 'file';
+                if (sendType.startsWith('image')) localMsgType = 'image';
+                else if (sendType.startsWith('video')) localMsgType = 'video';
+                else if (sendType.startsWith('audio')) localMsgType = 'voice';
+
+                const finalMsg = { type: localMsgType, content: URL.createObjectURL(file), fileName: sendName, isSelf: true };
+                replaceProgressWithContent(fileId, finalMsg);
+                
+                if(!db.history[activeChatId]) db.history[activeChatId] = [];
+                db.history[activeChatId].push({ ...finalMsg, content: '[File Sent]', type: 'text' }); saveDB();
+                
+                isSending = false; // 解锁
+                return;
+            }
+
+            // 读取切片
+            const chunkBlob = file.slice(offset, offset + CHUNK_SIZE);
+            const reader = new FileReader();
+            
+            reader.onload = (e) => {
+                const res = e.target.result;
+                const base64Chunk = res.split(',')[1];
+                
+                // ★ 冗余协议：每一块都带上 fileName 和 fileType
+                // 这样接收端就不需要先收到 Start 信号，任何时候收到 Chunk 都能自愈
+                socket.emit('send_private', { 
+                    targetId: activeChatId, 
+                    type: 'file_chunk_v2', 
+                    fileId: fileId, 
+                    chunk: base64Chunk,
+                    // Redundant Meta Data:
+                    fileName: sendName,
+                    fileType: sendType,
+                    totalSize: totalSize
+                });
+                
+                offset += chunkBlob.size;
+                
+                // UI Loop
+                const now = Date.now();
+                if(now - lastUpdate > 200) {
+                    const speed = ((offset - lastBytes) / 1024) / ((now - lastUpdate)/1000);
+                    updateProgressUI(fileId, offset, totalSize, speed);
+                    lastUpdate = now; lastBytes = offset;
+                }
+                
+                // ★ 30ms 间隔，给 Socket 缓冲区留出呼吸时间，防止阻塞
+                setTimeout(readNextChunk, 30);
+            };
+            
+            reader.onerror = () => { isSending = false; alert("Read Error"); };
+            reader.readAsDataURL(chunkBlob);
+        };
+
+        // 立即开始，不等待握手
+        readNextChunk();
     }
 
     function b64toBlob(b64Data, contentType) {
