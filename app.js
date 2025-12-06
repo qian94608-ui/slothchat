@@ -3,7 +3,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // ★★★ 请填入你的 Render 地址 ★★★
     const SERVER_URL = 'https://wojak-backend.onrender.com';
 
-    // --- 0. 动态样式 (保持不变) ---
+    // --- 0. 动态样式 ---
     const styleSheet = document.createElement("style");
     styleSheet.innerText = `
         @keyframes wave { 0% { transform: scaleY(1); } 50% { transform: scaleY(2.5); background: #fff; } 100% { transform: scaleY(1); } }
@@ -35,8 +35,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // --- 1. 全局变量 ---
     const DB_KEY = 'pepe_v33_final';
-    const CHUNK_SIZE = 16 * 1024; // 16KB 切片
+    const CHUNK_SIZE = 16 * 1024; // 16KB 分片
     const activeTransfers = {}; 
+    const orphanChunks = {}; // ★ 核心修复：孤儿队列，暂存未收到 Start 信号的块
     
     // 预览逻辑
     window.previewMedia = (url, type) => {
@@ -79,11 +80,9 @@ document.addEventListener('DOMContentLoaded', () => {
         const bubble = document.getElementById(elementId);
         const audio = new Audio(audioUrl);
         if(bubble) bubble.classList.add('playing');
-        
         audio.play().catch(e => {
             console.error("Audio Play Error:", e);
-            // 尝试静音播放以绕过自动播放策略，提示用户
-            alert("Playback error. Try tapping again. (Mac/iOS safety check)");
+            alert("Playback failed. Format not supported.");
             if(bubble) bubble.classList.remove('playing');
         });
         audio.onended = () => { if(bubble) bubble.classList.remove('playing'); };
@@ -159,7 +158,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }, 300);
     };
 
-    // --- 4. 聊天与网络 ---
+    // --- 4. 聊天与网络 (★ 核心重构：防止漏文件) ---
     let socket = null;
     let activeChatId = null;
 
@@ -179,9 +178,8 @@ document.addEventListener('DOMContentLoaded', () => {
         });
 
         socket.on('reconnect', () => { registerSocket(); });
-
         socket.on('disconnect', () => { document.getElementById('conn-status').className = "status-dot red"; });
-
+        
         document.addEventListener('visibilitychange', () => {
             if (document.visibilityState === 'visible') {
                 if (socket.disconnected) socket.connect();
@@ -189,50 +187,72 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         });
 
+        // 统一处理 Chunk 的函数
+        const processChunk = (fileId, chunk) => {
+            const transfer = activeTransfers[fileId];
+            if(transfer) {
+                transfer.chunks.push(chunk);
+                const chunkSize = Math.floor(chunk.length * 0.75); 
+                transfer.receivedSize += chunkSize;
+                
+                const now = Date.now();
+                if(now - transfer.lastTime > 200) {
+                    const bytesDiff = transfer.receivedSize - transfer.lastBytes;
+                    const timeDiff = (now - transfer.lastTime) / 1000;
+                    const speed = (bytesDiff / 1024) / timeDiff; 
+                    transfer.lastBytes = transfer.receivedSize; transfer.lastTime = now;
+                    updateProgressUI(fileId, transfer.receivedSize, transfer.totalSize, speed);
+                }
+            }
+        };
+
         socket.on('receive_msg', (msg) => {
             const fid = msg.from;
             if(!db.friends.find(f => f.id === fid)) {
                 db.friends.push({ id: fid, addedAt: Date.now(), alias: `User ${fid}` }); renderFriends();
             }
 
-            // --- 文件/语音流接收逻辑 ---
+            // [Case 1] 收到文件开始信号
             if (msg.type === 'file_start') {
+                // 初始化传输任务
                 activeTransfers[msg.fileId] = {
                     chunks: [],
                     totalSize: msg.totalSize,
                     receivedSize: 0,
                     startTime: Date.now(),
                     lastBytes: 0, lastTime: Date.now(),
-                    fileName: msg.fileName || `file_${Date.now()}`, // 防止 undefined
+                    fileName: msg.fileName || `file_${Date.now()}`,
                     fileType: msg.fileType
                 };
+                
                 if(activeChatId === fid) appendProgressBubble(fid, msg.fileId, activeTransfers[msg.fileId].fileName, msg.fileType, false);
-                return;
-            }
-
-            if (msg.type === 'file_chunk') {
-                const transfer = activeTransfers[msg.fileId];
-                if(transfer) {
-                    transfer.chunks.push(msg.chunk);
-                    const chunkSize = Math.floor(msg.chunk.length * 0.75); 
-                    transfer.receivedSize += chunkSize;
-                    
-                    const now = Date.now();
-                    if(now - transfer.lastTime > 200) {
-                        const bytesDiff = transfer.receivedSize - transfer.lastBytes;
-                        const timeDiff = (now - transfer.lastTime) / 1000;
-                        const speed = (bytesDiff / 1024) / timeDiff; 
-                        transfer.lastBytes = transfer.receivedSize; transfer.lastTime = now;
-                        updateProgressUI(msg.fileId, transfer.receivedSize, transfer.totalSize, speed);
-                    }
+                
+                // ★ 关键修复：检查有没有“孤儿块”在等待这个 Start 信号
+                if (orphanChunks[msg.fileId]) {
+                    orphanChunks[msg.fileId].forEach(c => processChunk(msg.fileId, c));
+                    delete orphanChunks[msg.fileId]; // 清空孤儿队列
                 }
                 return;
             }
 
+            // [Case 2] 收到文件块
+            if (msg.type === 'file_chunk') {
+                if (activeTransfers[msg.fileId]) {
+                    // 正常情况：已收到 Start，直接处理
+                    processChunk(msg.fileId, msg.chunk);
+                } else {
+                    // ★ 异常情况：Start 还没到，块先到了。存入孤儿队列，防止漏文件
+                    if (!orphanChunks[msg.fileId]) orphanChunks[msg.fileId] = [];
+                    orphanChunks[msg.fileId].push(msg.chunk);
+                }
+                return;
+            }
+
+            // [Case 3] 收到文件结束
             if (msg.type === 'file_end') {
                 const transfer = activeTransfers[msg.fileId];
+                // 如果 End 到了但 Transfer 还没建（极端情况），这里通常意味着彻底丢包或顺序极度混乱
                 if(transfer) {
-                    // ★ 修复: 使用发送端指定的类型生成 Blob，解决 Mac 播放问题
                     const blob = b64toBlob(transfer.chunks.join(''), transfer.fileType);
                     const fileUrl = URL.createObjectURL(blob);
                     
@@ -242,7 +262,9 @@ document.addEventListener('DOMContentLoaded', () => {
                     else if (transfer.fileType.startsWith('audio')) finalType = 'voice';
 
                     const finalMsg = {
-                        type: finalType, content: fileUrl, fileName: transfer.fileName, isSelf: false, ts: Date.now()
+                        type: finalType, content: fileUrl, 
+                        fileName: transfer.fileName, // ★ 这里肯定有值，因为绑定在 transfer 上
+                        isSelf: false, ts: Date.now()
                     };
                     replaceProgressWithContent(msg.fileId, finalMsg);
                     
@@ -264,16 +286,15 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    // --- 5. 发送逻辑 (★ 核心修复：使用 slice 切片读取，解决 undefined/卡0%) ---
+    // --- 5. 发送逻辑 (★ 核心修复：限流发送，解决 0% 卡顿) ---
     function sendFileChunked(file, overrideType = null) {
         if(!activeChatId || !socket) return;
         const fileId = Date.now() + '-' + Math.random().toString(36).substr(2, 9);
-        
-        // 强制检查文件名
         const sendName = (file.name && file.name.length > 0) ? file.name : `file_${Date.now()}`;
         const sendType = overrideType || file.type || 'application/octet-stream';
         const totalSize = file.size;
 
+        // 1. 发送 Start
         socket.emit('send_private', {
             targetId: activeChatId, type: 'file_start', fileId: fileId,
             fileName: sendName, fileType: sendType, totalSize: totalSize
@@ -281,11 +302,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
         appendProgressBubble(activeChatId, fileId, sendName, sendType, true);
 
-        // ★ 核心重构：不使用 readAsDataURL 全量读取，改用 slice
         let offset = 0;
         let lastUpdate = Date.now();
         let lastBytes = 0;
 
+        // 2. 递归读取发送
         const readNextChunk = () => {
             if (offset >= totalSize) {
                 // 发送完毕
@@ -304,19 +325,19 @@ document.addEventListener('DOMContentLoaded', () => {
                 return;
             }
 
+            // 使用 readAsDataURL 切片读取 (原生Base64，速度快且稳)
             const chunkBlob = file.slice(offset, offset + CHUNK_SIZE);
             const reader = new FileReader();
             
             reader.onload = (e) => {
-                const arrayBuffer = e.target.result;
-                // 将 ArrayBuffer 转 Base64 发送 (兼容现有 Socket 文本协议)
-                const base64Chunk = arrayBufferToBase64(arrayBuffer);
+                const res = e.target.result;
+                // 去掉 data:xxx;base64, 前缀
+                const base64Chunk = res.split(',')[1];
                 
                 socket.emit('send_private', { targetId: activeChatId, type: 'file_chunk', fileId: fileId, chunk: base64Chunk });
                 
                 offset += chunkBlob.size;
                 
-                // UI 更新
                 const now = Date.now();
                 if(now - lastUpdate > 200) {
                     const speed = ((offset - lastBytes) / 1024) / ((now - lastUpdate)/1000);
@@ -324,31 +345,18 @@ document.addEventListener('DOMContentLoaded', () => {
                     lastUpdate = now; lastBytes = offset;
                 }
                 
-                // 继续读下一块 (使用 setTimeout 0 避免阻塞主线程)
-                setTimeout(readNextChunk, 0);
+                // ★ 关键：稍微增加延迟 (10ms)，防止主线程将 Socket 缓冲区塞满导致假死
+                setTimeout(readNextChunk, 10);
             };
             
             reader.onerror = () => { alert("Read Error"); };
-            reader.readAsArrayBuffer(chunkBlob);
+            reader.readAsDataURL(chunkBlob);
         };
 
-        // 启动读取
         readNextChunk();
     }
 
-    // 辅助: ArrayBuffer 转 Base64
-    function arrayBufferToBase64(buffer) {
-        let binary = '';
-        const bytes = new Uint8Array(buffer);
-        const len = bytes.byteLength;
-        for (let i = 0; i < len; i++) {
-            binary += String.fromCharCode(bytes[i]);
-        }
-        return window.btoa(binary);
-    }
-
     function b64toBlob(b64Data, contentType) {
-        // 增加容错
         try {
             const sliceSize = 512; const byteCharacters = atob(b64Data); const byteArrays = [];
             for (let offset = 0; offset < byteCharacters.length; offset += sliceSize) {
@@ -360,7 +368,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
             return new Blob(byteArrays, {type: contentType});
         } catch(e) {
-            console.error("Blob Convert Error", e);
+            console.error("Blob Error", e);
             return new Blob([], {type: contentType});
         }
     }
@@ -417,7 +425,6 @@ document.addEventListener('DOMContentLoaded', () => {
         if(activeChatId !== chatId) return;
         const container = document.getElementById('messages-container');
         const div = document.createElement('div'); div.id = `progress-row-${fileId}`; div.className = `msg-row ${isSelf?'self':'other'}`;
-        // 防止 fileName 为空导致的显示问题
         const safeName = fileName || "File";
         div.innerHTML = `<div class="bubble" style="min-width:160px; font-size:12px;"><div style="font-weight:bold; margin-bottom:4px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:150px;">${isSelf?'⬆':'⬇'} ${safeName}</div><div style="background:#ddd; height:4px; border-radius:2px; overflow:hidden; margin-bottom:4px;"><div id="bar-${fileId}" style="width:0%; height:100%; background:${isSelf?'#fff':'#59BC10'}; transition:width 0.1s;"></div></div><div style="display:flex; justify-content:space-between; font-size:10px; opacity:0.8;"><span id="speed-${fileId}">0 KB/s</span><span id="pct-${fileId}">0%</span></div></div>`;
         container.appendChild(div); container.scrollTop = container.scrollHeight;
@@ -449,13 +456,12 @@ document.addEventListener('DOMContentLoaded', () => {
         else { voiceBtn.classList.add('hidden'); voiceBtn.style.display = 'none'; textWrapper.classList.remove('hidden'); textWrapper.style.display = 'flex'; modeSwitch.innerText = "🎤"; setTimeout(() => document.getElementById('chat-input').focus(), 100); }
     };
 
-    // 录音 (★ 修复: Mac兼容性 & 内存优化)
+    // 录音
     let mediaRecorder, audioChunks;
     const startRec = async (e) => {
         if(e) e.preventDefault();
         try {
             const stream = await navigator.mediaDevices.getUserMedia({audio:true});
-            // 优先 mp4 (Safari), 其次 webm
             let mimeType = 'audio/webm';
             if (MediaRecorder.isTypeSupported('audio/mp4')) mimeType = 'audio/mp4';
             else if (MediaRecorder.isTypeSupported('audio/webm;codecs=opus')) mimeType = 'audio/webm;codecs=opus';
@@ -465,7 +471,6 @@ document.addEventListener('DOMContentLoaded', () => {
             mediaRecorder.ondataavailable = e => { if(e.data.size > 0) audioChunks.push(e.data); };
             mediaRecorder.onstop = () => {
                 const blob = new Blob(audioChunks, {type: mimeType});
-                // 转换为 File 对象并分片发送，避免 Base64 字符串过长崩溃
                 const voiceFile = new File([blob], "voice_" + Date.now() + ".wav", { type: mimeType });
                 sendFileChunked(voiceFile, mimeType);
                 stream.getTracks().forEach(track => track.stop());
