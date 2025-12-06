@@ -3,41 +3,109 @@ document.addEventListener('DOMContentLoaded', () => {
     // ★★★ 请填入你的 Render 地址 ★★★
     const SERVER_URL = 'https://wojak-backend.onrender.com';
 
-    // --- 0. 动态样式 ---
+    // --- 0. 动态样式 (Mac 风格 + 动画修复) ---
     const styleSheet = document.createElement("style");
     styleSheet.innerText = `
-        @keyframes wave { 0% { transform: scaleY(1); } 50% { transform: scaleY(2.5); background: #fff; } 100% { transform: scaleY(1); } }
-        @keyframes wave-green { 0% { transform: scaleY(1); } 50% { transform: scaleY(2.5); background: #59BC10; } 100% { transform: scaleY(1); } }
-        .voice-bubble { transition: all 0.2s; }
-        .wave-visual { display: flex; align-items: center; gap: 3px; height: 12px; margin-left: 10px; }
-        .wave-bar { width: 3px; height: 100%; background-color: #555; border-radius: 2px; transform-origin: bottom; }
-        .voice-bubble.self.playing .wave-bar { animation: wave 0.6s infinite ease-in-out; background-color: #fff !important; }
-        .voice-bubble.other.playing .wave-bar { animation: wave-green 0.6s infinite ease-in-out; background-color: #59BC10 !important; }
+        :root {
+            --glass-bg: rgba(255, 255, 255, 0.75);
+            --glass-border: 1px solid rgba(255, 255, 255, 0.5);
+            --shadow-sm: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+            --shadow-lg: 0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+            --primary-mac: #007AFF;
+            --success-mac: #34C759;
+            --danger-mac: #FF3B30;
+        }
+
+        body { background: #F2F2F7; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
+
+        /* Mac 风格通用类 */
+        .mac-glass {
+            background: var(--glass-bg);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border-bottom: var(--glass-border);
+        }
+        
+        /* 列表项优化 */
+        .k-list-item {
+            background: #fff;
+            border-radius: 12px;
+            padding: 12px;
+            margin-bottom: 8px;
+            box-shadow: var(--shadow-sm);
+            transition: all 0.2s;
+            border: 1px solid rgba(0,0,0,0.02);
+        }
+        .k-list-item:active { transform: scale(0.98); background: #f5f5f5; }
+
+        /* 抖动动画 */
+        @keyframes shake-hard {
+            0% { transform: translate(1px, 1px) rotate(0deg); }
+            10% { transform: translate(-1px, -2px) rotate(-1deg); }
+            20% { transform: translate(-3px, 0px) rotate(1deg); }
+            30% { transform: translate(3px, 2px) rotate(0deg); }
+            40% { transform: translate(1px, -1px) rotate(1deg); }
+            50% { transform: translate(-1px, 2px) rotate(-1deg); }
+            60% { transform: translate(-3px, 1px) rotate(0deg); }
+            70% { transform: translate(3px, 1px) rotate(-1deg); }
+            80% { transform: translate(-1px, -1px) rotate(1deg); }
+            90% { transform: translate(1px, 2px) rotate(0deg); }
+            100% { transform: translate(1px, -2px) rotate(-1deg); }
+        }
+        .shake-notify { animation: shake-hard 0.8s infinite; border: 1px solid var(--danger-mac); }
+
+        /* 跑马灯效果 */
+        .marquee-wrapper {
+            overflow: hidden; white-space: nowrap; max-width: 120px; font-size: 10px; color: var(--danger-mac); font-weight: bold;
+        }
+        .marquee-text { display: inline-block; animation: scroll-left 4s linear infinite; padding-left: 100%; }
+        @keyframes scroll-left { 0% { transform: translateX(0); } 100% { transform: translateX(-100%); } }
+
+        /* 语音波纹 */
+        @keyframes wave-play { 0% { height: 20%; } 50% { height: 100%; } 100% { height: 20%; } }
+        .wave-visual { display: flex; align-items: center; gap: 3px; height: 16px; margin-left: 10px; }
+        .wave-bar { width: 3px; height: 20%; background-color: #888; border-radius: 2px; }
+        /* 播放时触发动画 */
+        .voice-bubble.playing .wave-bar { animation: wave-play 0.5s infinite ease-in-out; background-color: var(--primary-mac) !important; }
         .voice-bubble.playing .wave-bar:nth-child(1) { animation-delay: 0s; }
         .voice-bubble.playing .wave-bar:nth-child(2) { animation-delay: 0.1s; }
         .voice-bubble.playing .wave-bar:nth-child(3) { animation-delay: 0.2s; }
         .voice-bubble.playing .wave-bar:nth-child(4) { animation-delay: 0.3s; }
-        .thumb-box { position: relative; display: inline-block; max-width: 120px; border-radius: 8px; overflow: hidden; background: #000; min-height: 40px; }
-        .thumb-img { max-width: 100%; max-height: 120px; object-fit: cover; display: block; }
-        .preview-eye { position: absolute; bottom: 0; right: 0; background: rgba(0,0,0,0.6); width: 30px; height: 30px; border-top-left-radius: 8px; display: flex; align-items: center; justify-content: center; cursor: pointer; }
-        .bubble { max-width: 85%; word-break: break-word; }
-        .sticker-img { width: 100px; height: 100px; object-fit: contain; }
+
+        /* 图片预览 & 气泡优化 */
+        .thumb-box { position: relative; display: inline-block; border-radius: 12px; overflow: hidden; box-shadow: var(--shadow-sm); }
+        .thumb-img { max-width: 140px; max-height: 140px; object-fit: cover; display: block; }
+        .bubble { border:none !important; box-shadow: var(--shadow-sm); border-radius: 18px !important; padding: 10px 14px; }
+        .msg-row.self .bubble { background: var(--primary-mac); color: #fff; }
+        .msg-row.other .bubble { background: #fff; color: #000; }
+
+        /* 进度条取消按钮 */
+        .cancel-btn {
+            position: absolute; top: -8px; right: -8px; width: 20px; height: 20px;
+            background: var(--danger-mac); color: white; border-radius: 50%;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 12px; cursor: pointer; box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+            z-index: 10;
+        }
     `;
     document.head.appendChild(styleSheet);
 
     // 预览模态框
     const previewModalHTML = `
-    <div id="media-preview-modal" class="modal-overlay hidden" style="background:#000; z-index:9999; display:none;">
-        <button onclick="closePreview()" style="position:absolute; top:40px; right:20px; z-index:10000; background:rgba(255,255,255,0.2); color:#fff; border:none; width:40px; height:40px; border-radius:50%; font-size:20px;">✕</button>
+    <div id="media-preview-modal" class="modal-overlay hidden" style="background:rgba(0,0,0,0.9); z-index:9999; display:none;">
+        <button onclick="closePreview()" style="position:absolute; top:40px; right:20px; z-index:10000; background:rgba(255,255,255,0.1); color:#fff; border:none; width:44px; height:44px; border-radius:50%; font-size:24px; cursor:pointer;">✕</button>
         <div id="preview-container" style="width:100%; height:100%; display:flex; justify-content:center; align-items:center;"></div>
     </div>`;
     document.body.insertAdjacentHTML('beforeend', previewModalHTML);
 
     // --- 1. 全局变量 ---
-    const DB_KEY = 'pepe_v33_final';
-    const CHUNK_SIZE = 12 * 1024; // 降低到 12KB 以适应 JSON 编码膨胀
+    const DB_KEY = 'pepe_v33_mac_final';
+    const CHUNK_SIZE = 12 * 1024; // 12KB (隧道模式安全大小)
+    
+    // 状态管理
     const activeDownloads = {};   
-    let isSending = false;        
+    let isSending = false;
+    let cancelFlag = {}; // 发送端取消标志
     
     // 预览逻辑
     window.previewMedia = (url, type) => {
@@ -47,7 +115,7 @@ document.addEventListener('DOMContentLoaded', () => {
         let el;
         if(type === 'image') {
             el = document.createElement('img'); el.src = url;
-            el.style.width = '100%'; el.style.height = 'auto'; el.style.maxHeight = '100vh'; el.style.objectFit = 'contain';
+            el.style.maxWidth = '100%'; el.style.maxHeight = '100vh'; el.style.objectFit = 'contain';
         } else if(type === 'video') {
             el = document.createElement('video'); el.src = url; el.controls = true; el.autoplay = true;
             el.style.maxWidth = '100%'; el.style.maxHeight = '100vh';
@@ -73,40 +141,56 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
-    // 语音播放
+    // 语音播放 (动画修复)
     window.playVoice = (audioUrl, elementId) => {
         document.querySelectorAll('audio').forEach(a => { a.pause(); a.currentTime = 0; });
         document.querySelectorAll('.voice-bubble').forEach(b => b.classList.remove('playing'));
         const bubble = document.getElementById(elementId);
         const audio = new Audio(audioUrl);
-        if(bubble) bubble.classList.add('playing');
+        
+        if(bubble) bubble.classList.add('playing'); // 触发CSS波纹
+        
         audio.play().catch(e => {
             console.error("Play Error:", e);
-            alert("Playback failed. Format not supported.");
+            alert("Audio format error.");
             if(bubble) bubble.classList.remove('playing');
         });
         audio.onended = () => { if(bubble) bubble.classList.remove('playing'); };
+    };
+
+    // 取消传输
+    window.cancelTransfer = (fileId, isSender) => {
+        if(isSender) {
+            cancelFlag[fileId] = true; // 设置标志位，中断发送循环
+        } else {
+            // 接收端取消：删除任务，移除UI
+            delete activeDownloads[fileId];
+        }
+        const row = document.getElementById(`progress-row-${fileId}`);
+        if(row) row.innerHTML = `<div class="bubble" style="color:red; font-size:12px;">🚫 Transfer Cancelled</div>`;
     };
 
     window.closeAllModals = () => {
         document.querySelectorAll('.modal-overlay').forEach(e => { if(e.id !== 'media-preview-modal') e.classList.add('hidden'); });
         if(window.scanner) window.scanner.stop().catch(()=>{});
     };
+
+    // --- 2. 页面管理 (移除 ID卡 逻辑) ---
     window.switchTab = (id) => {
+        if (id === 'tab-identity') return; // 禁用已移除的页面
         document.querySelectorAll('.page').forEach(p => {
             if(p.id === id) { p.classList.add('active'); p.classList.remove('right-sheet'); }
             else if(p.id !== 'view-main') p.classList.remove('active');
         });
-        if(id === 'tab-identity') { document.getElementById('tab-identity').classList.remove('hidden'); document.getElementById('tab-identity').style.display = 'block'; }
     };
-    window.closeIdentity = () => { document.getElementById('tab-identity').classList.add('hidden'); document.getElementById('tab-identity').style.display = 'none'; };
     window.goBack = () => {
         document.getElementById('view-chat').classList.remove('active');
         setTimeout(()=>document.getElementById('view-chat').classList.add('right-sheet'), 300);
         activeChatId = null;
+        renderFriends(); // 回到主页时刷新状态
     };
 
-    // --- 2. 数据层 ---
+    // --- 3. 数据层 ---
     let db;
     try {
         db = JSON.parse(localStorage.getItem(DB_KEY));
@@ -118,23 +202,22 @@ document.addEventListener('DOMContentLoaded', () => {
     const saveDB = () => localStorage.setItem(DB_KEY, JSON.stringify(db));
     const MY_ID = db.profile.id;
 
-    // UI Init
-    document.getElementById('my-id-display').innerText = MY_ID;
-    document.getElementById('card-id-text').innerText = MY_ID;
-    document.getElementById('my-nickname').innerText = db.profile.nickname;
-    document.getElementById('my-avatar').src = `https://api.dicebear.com/7.x/open-peeps/svg?seed=${db.profile.avatarSeed}`;
-    document.getElementById('card-avatar').src = `https://api.dicebear.com/7.x/open-peeps/svg?seed=${db.profile.avatarSeed}`;
-    if(window.QRCode) {
-        new QRCode(document.getElementById("qrcode"), { text: MY_ID, width: 60, height: 60, colorDark: "#59BC10", colorLight: "#FFFFFF" });
-        new QRCode(document.querySelector(".qr-img"), { text: MY_ID, width: 60, height: 60 });
+    // UI Init (Mac 风格适配)
+    const renderProfile = () => {
+        document.getElementById('my-id-display').innerText = MY_ID;
+        document.getElementById('my-nickname').innerText = db.profile.nickname;
+        document.getElementById('my-avatar').src = `https://api.dicebear.com/7.x/notionists/svg?seed=${db.profile.avatarSeed}`; // 换个头像风格
+        if(window.QRCode) {
+            new QRCode(document.getElementById("qrcode"), { text: MY_ID, width: 60, height: 60, colorDark: "#000000", colorLight: "#FFFFFF" });
+        }
     }
-    renderFriends();
+    renderProfile();
 
-    // --- 3. 核心功能 ---
+    // --- 4. 核心功能 ---
     function handleAddFriend(id) {
         if(id === MY_ID) return;
         if(!db.friends.find(f => f.id === id)) {
-            db.friends.push({ id: id, addedAt: Date.now(), alias: `User ${id}` });
+            db.friends.push({ id: id, addedAt: Date.now(), alias: `User ${id}`, unread: false }); // 增加 unread 字段
             saveDB(); renderFriends();
         }
         openChat(id);
@@ -158,17 +241,14 @@ document.addEventListener('DOMContentLoaded', () => {
         }, 300);
     };
 
-    // --- 4. 聊天与网络 (★ 核心修复：隧道接收) ---
+    // --- 5. 聊天与网络 (隧道模式 + 状态优化) ---
     let socket = null;
     let activeChatId = null;
 
     if(!SERVER_URL.includes('onrender')) alert("Configure SERVER_URL!");
     else {
         socket = io(SERVER_URL, { 
-            reconnection: true, 
-            reconnectionAttempts: Infinity,
-            transports: ['websocket'],
-            upgrade: false
+            reconnection: true, reconnectionAttempts: Infinity, transports: ['websocket'], upgrade: false 
         });
         
         const registerSocket = () => { if(socket.connected) socket.emit('register', MY_ID); };
@@ -178,47 +258,68 @@ document.addEventListener('DOMContentLoaded', () => {
             registerSocket();
             isSending = false;
         });
-
         socket.on('reconnect', () => { registerSocket(); });
         socket.on('disconnect', () => { document.getElementById('conn-status').className = "status-dot red"; isSending = false; });
         
         document.addEventListener('visibilitychange', () => {
             if (document.visibilityState === 'visible') {
-                if (socket.disconnected) socket.connect();
-                else registerSocket();
+                if (socket.disconnected) socket.connect(); else registerSocket();
             }
         });
 
         socket.on('receive_msg', (msg) => {
             const fid = msg.from;
-            if(!db.friends.find(f => f.id === fid)) {
-                db.friends.push({ id: fid, addedAt: Date.now(), alias: `User ${fid}` }); renderFriends();
+            let friend = db.friends.find(f => f.id === fid);
+            if(!friend) {
+                friend = { id: fid, addedAt: Date.now(), alias: `User ${fid}`, unread: false };
+                db.friends.push(friend);
             }
 
-            // --- ★ 隧道解包逻辑 ---
-            // 我们通过 msg.type 判断是不是隧道包
+            // ★ 在线状态逻辑：收到消息证明对方在线
+            if (activeChatId === fid) {
+                document.getElementById('chat-online-dot').className = "status-dot green";
+            }
+
+            // ★ 消息通知逻辑 (滚动文字 + 语音 + 抖动)
+            if (activeChatId !== fid) {
+                friend.unread = true; // 标记未读
+                saveDB();
+                renderFriends();
+                
+                // 播放性感语音 (尝试 TTS)
+                if ('speechSynthesis' in window) {
+                    const utterance = new SpeechSynthesisUtterance("Message coming");
+                    utterance.lang = 'en-US';
+                    utterance.pitch = 1.2;
+                    window.speechSynthesis.speak(utterance);
+                } else {
+                    document.getElementById('msg-sound').play().catch(()=>{});
+                }
+                if(navigator.vibrate) navigator.vibrate([100, 50, 100]);
+            } else {
+                document.getElementById('msg-sound').play().catch(()=>{});
+            }
+
+            // --- 隧道解包逻辑 (保持不变) ---
             if (msg.type === 'tunnel_file_packet') {
                 try {
-                    // ★ 关键：从 content 字段里解压出真实数据
                     const packet = JSON.parse(msg.content);
                     
-                    // 1. 处理数据块
                     if (packet.subType === 'chunk') {
+                        // 检查是否已取消
+                        if (activeDownloads[packet.fileId] === 'cancelled') return;
+
                         if (!activeDownloads[packet.fileId]) {
                             activeDownloads[packet.fileId] = {
-                                chunks: [],
-                                totalSize: packet.totalSize || 0,
-                                receivedSize: 0,
-                                lastBytes: 0, 
-                                lastTime: Date.now(),
-                                fileName: packet.fileName,
-                                fileType: packet.fileType
+                                chunks: [], totalSize: packet.totalSize || 0, receivedSize: 0,
+                                lastBytes: 0, lastTime: Date.now(),
+                                fileName: packet.fileName, fileType: packet.fileType
                             };
                             if(activeChatId === fid) appendProgressBubble(fid, packet.fileId, packet.fileName, packet.fileType, false);
                         }
 
                         const download = activeDownloads[packet.fileId];
-                        download.chunks.push(packet.data); // data 是 base64
+                        download.chunks.push(packet.data);
                         download.receivedSize += Math.floor(packet.data.length * 0.75);
                         
                         const now = Date.now();
@@ -230,8 +331,8 @@ document.addEventListener('DOMContentLoaded', () => {
                             updateProgressUI(packet.fileId, download.receivedSize, download.totalSize, speed);
                         }
                     } 
-                    // 2. 处理结束信号
                     else if (packet.subType === 'end') {
+                        if (activeDownloads[packet.fileId] === 'cancelled') return;
                         const download = activeDownloads[packet.fileId];
                         if(download) {
                             const blob = b64toBlob(download.chunks.join(''), download.fileType);
@@ -242,40 +343,30 @@ document.addEventListener('DOMContentLoaded', () => {
                             else if (download.fileType.startsWith('video')) finalType = 'video';
                             else if (download.fileType.startsWith('audio')) finalType = 'voice';
 
-                            const finalMsg = {
-                                type: finalType, content: fileUrl, 
-                                fileName: download.fileName, 
-                                isSelf: false, ts: Date.now()
-                            };
+                            const finalMsg = { type: finalType, content: fileUrl, fileName: download.fileName, isSelf: false, ts: Date.now() };
                             replaceProgressWithContent(packet.fileId, finalMsg);
                             
                             if(!db.history[fid]) db.history[fid] = [];
-                            const saveMsg = { ...finalMsg, content: '[File Saved]', type: 'text' };
-                            db.history[fid].push(saveMsg); saveDB();
+                            db.history[fid].push({ ...finalMsg, content: '[File Saved]', type: 'text' }); saveDB();
                             
                             delete activeDownloads[packet.fileId];
                             document.getElementById('success-sound').play().catch(()=>{});
                         }
                     }
-                } catch (e) {
-                    console.error("Tunnel Parse Error", e);
-                }
-                return; // 隧道包处理完毕，不往下走
+                } catch (e) { console.error("Tunnel Parse Error", e); }
+                return;
             }
 
-            // 普通消息 (非隧道包)
             if (msg.type !== 'tunnel_file_packet') {
                 if(!db.history[fid]) db.history[fid] = [];
                 db.history[fid].push({ type: msg.type, content: msg.content, isSelf: false, ts: msg.timestamp });
-                saveDB(); renderFriends();
+                saveDB(); 
                 if(activeChatId === fid) appendMsgDOM(msg, false);
-                else document.getElementById('msg-sound').play().catch(()=>{});
             }
         });
     }
 
-    // --- 5. 发送逻辑 (★ 核心修复：隧道发送) ---
-
+    // --- 6. 发送逻辑 (隧道发送 + 取消功能) ---
     function sendFileChunked(file, overrideType = null) {
         if(!activeChatId || !socket) return;
         if(isSending) { alert("Sending... Please wait."); return; }
@@ -287,6 +378,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const sendType = overrideType || file.type || 'application/octet-stream';
         const totalSize = file.size;
 
+        cancelFlag[fileId] = false; // 初始化取消标志
         appendProgressBubble(activeChatId, fileId, sendName, sendType, true);
 
         let offset = 0;
@@ -294,23 +386,16 @@ document.addEventListener('DOMContentLoaded', () => {
         let lastBytes = 0;
 
         const readNextChunk = () => {
-            if(!socket.connected) {
+            // 检查取消标志
+            if (cancelFlag[fileId]) {
                 isSending = false;
-                alert("Network lost.");
-                return; 
+                return; // 停止发送循环
             }
+            if(!socket.connected) { isSending = false; alert("Network lost."); return; }
 
             if (offset >= totalSize) {
-                // 发送结束包 (打包进 content)
-                const endPacket = {
-                    subType: 'end',
-                    fileId: fileId
-                };
-                socket.emit('send_private', { 
-                    targetId: activeChatId, 
-                    type: 'tunnel_file_packet', // 标记为隧道包
-                    content: JSON.stringify(endPacket) 
-                });
+                const endPacket = { subType: 'end', fileId: fileId };
+                socket.emit('send_private', { targetId: activeChatId, type: 'tunnel_file_packet', content: JSON.stringify(endPacket) });
                 
                 let localMsgType = 'file';
                 if (sendType.startsWith('image')) localMsgType = 'image';
@@ -322,34 +407,20 @@ document.addEventListener('DOMContentLoaded', () => {
                 
                 if(!db.history[activeChatId]) db.history[activeChatId] = [];
                 db.history[activeChatId].push({ ...finalMsg, content: '[File Sent]', type: 'text' }); saveDB();
-                
-                isSending = false;
-                return;
+                isSending = false; return;
             }
 
             const chunkBlob = file.slice(offset, offset + CHUNK_SIZE);
             const reader = new FileReader();
             
             reader.onload = (e) => {
-                const res = e.target.result;
-                const base64Chunk = res.split(',')[1];
-                
-                // ★ 隧道打包：所有数据塞进 content
+                const base64Chunk = e.target.result.split(',')[1];
                 const dataPacket = {
-                    subType: 'chunk',
-                    fileId: fileId,
-                    data: base64Chunk,
-                    fileName: sendName,
-                    fileType: sendType,
-                    totalSize: totalSize
+                    subType: 'chunk', fileId: fileId, data: base64Chunk,
+                    fileName: sendName, fileType: sendType, totalSize: totalSize
                 };
 
-                socket.emit('send_private', { 
-                    targetId: activeChatId, 
-                    type: 'tunnel_file_packet', // 标记为隧道包
-                    content: JSON.stringify(dataPacket) 
-                });
-                
+                socket.emit('send_private', { targetId: activeChatId, type: 'tunnel_file_packet', content: JSON.stringify(dataPacket) });
                 offset += chunkBlob.size;
                 
                 const now = Date.now();
@@ -358,14 +429,12 @@ document.addEventListener('DOMContentLoaded', () => {
                     updateProgressUI(fileId, offset, totalSize, speed);
                     lastUpdate = now; lastBytes = offset;
                 }
-                
                 setTimeout(readNextChunk, 30);
             };
             
             reader.onerror = () => { isSending = false; alert("Read Error"); };
             reader.readAsDataURL(chunkBlob);
         };
-
         readNextChunk();
     }
 
@@ -380,26 +449,54 @@ document.addEventListener('DOMContentLoaded', () => {
                 byteArrays.push(byteArray);
             }
             return new Blob(byteArrays, {type: contentType});
-        } catch(e) {
-            console.error("Blob Error", e);
-            return new Blob([], {type: contentType});
-        }
+        } catch(e) { return new Blob([], {type: contentType}); }
     }
 
+    // --- 渲染逻辑 (含消息提醒) ---
     function renderFriends() {
         const list = document.getElementById('friends-list-container'); list.innerHTML = '';
         db.friends.forEach(f => {
-            const div = document.createElement('div'); div.className = 'k-list-item';
-            div.innerHTML = `<div class="avatar-frame"><img src="https://api.dicebear.com/7.x/open-peeps/svg?seed=${f.id}" class="avatar-img"></div><div><div style="font-weight:bold">${f.alias || f.id}</div><div style="font-size:12px; color:green">SAVED</div></div>`;
-            div.onclick = () => openChat(f.id); list.appendChild(div);
+            const div = document.createElement('div'); 
+            // 抖动效果类
+            div.className = `k-list-item ${f.unread ? 'shake-notify' : ''}`;
+            
+            // 跑马灯逻辑
+            let nameDisplay = `<div style="font-weight:bold; font-size:16px;">${f.alias || f.id}</div>`;
+            if (f.unread) {
+                nameDisplay = `
+                <div style="display:flex; align-items:center; gap:5px;">
+                    <div style="font-weight:bold; font-size:16px;">${f.alias || f.id}</div>
+                    <div class="marquee-wrapper"><div class="marquee-text">📢 Message Coming... 📢 Message Coming...</div></div>
+                </div>`;
+            }
+
+            div.innerHTML = `
+                <div class="avatar-frame"><img src="https://api.dicebear.com/7.x/notionists/svg?seed=${f.id}" class="avatar-img"></div>
+                <div style="flex:1;">
+                    ${nameDisplay}
+                    <div style="font-size:12px; color:#888;">${f.unread ? '<span style="color:red">● New Message</span>' : 'Click to chat'}</div>
+                </div>
+            `;
+            div.onclick = () => {
+                // 点击后清除未读
+                f.unread = false;
+                saveDB();
+                renderFriends();
+                openChat(f.id);
+            }; 
+            list.appendChild(div);
         });
     }
 
     function openChat(id) {
         activeChatId = id; const f = db.friends.find(x => x.id === id);
         document.getElementById('chat-partner-name').innerText = f ? (f.alias || f.id) : id;
+        
+        // 默认红色，收到消息才变绿
+        document.getElementById('chat-online-dot').className = "status-dot red";
+
         const chatView = document.getElementById('view-chat'); chatView.classList.remove('right-sheet'); chatView.classList.add('active');
-        document.getElementById('chat-online-dot').className = "status-dot online";
+        
         const container = document.getElementById('messages-container'); container.innerHTML = '';
         const msgs = db.history[id] || []; msgs.forEach(m => appendMsgDOM(m, m.isSelf));
     }
@@ -421,7 +518,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if(msg.type === 'text') { html = `<div class="bubble">${msg.content}</div>`; } 
         else if (msg.type === 'sticker') { html = `<div class="bubble" style="background:transparent; border:none; box-shadow:none;"><img src="${msg.content}" class="sticker-img"></div>`; }
         else if (msg.type === 'voice') {
-            html = `<div id="voice-${uid}" class="bubble voice-bubble ${isSelf?'self':'other'}" style="cursor:pointer; display:flex; align-items:center; gap:5px; background:${isSelf?'#59BC10':'#fff'}; color:${isSelf?'#fff':'#000'}" onclick="playVoice('${msg.content}', 'voice-${uid}')"><span style="font-weight:bold;">▶ Voice</span><div class="wave-visual"><div class="wave-bar"></div><div class="wave-bar"></div><div class="wave-bar"></div><div class="wave-bar"></div></div></div>`;
+            html = `<div id="voice-${uid}" class="bubble voice-bubble ${isSelf?'self':'other'}" style="cursor:pointer; display:flex; align-items:center; gap:5px; padding:10px 15px;" onclick="playVoice('${msg.content}', 'voice-${uid}')"><span style="font-weight:bold;">▶ Voice</span><div class="wave-visual"><div class="wave-bar"></div><div class="wave-bar"></div><div class="wave-bar"></div><div class="wave-bar"></div></div></div>`;
         } 
         else if (msg.type === 'image') {
             html = `<div class="bubble" style="padding:4px;"><div class="thumb-box"><img src="${msg.content}" class="thumb-img"><div class="preview-eye" onclick="previewMedia('${msg.content}', 'image')"><span style="color:#fff; font-size:16px;">👁</span></div></div></div>`;
@@ -440,7 +537,19 @@ document.addEventListener('DOMContentLoaded', () => {
         const container = document.getElementById('messages-container');
         const div = document.createElement('div'); div.id = `progress-row-${fileId}`; div.className = `msg-row ${isSelf?'self':'other'}`;
         const safeName = fileName || "File";
-        div.innerHTML = `<div class="bubble" style="min-width:160px; font-size:12px;"><div style="font-weight:bold; margin-bottom:4px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:150px;">${isSelf?'⬆':'⬇'} ${safeName}</div><div style="background:#ddd; height:4px; border-radius:2px; overflow:hidden; margin-bottom:4px;"><div id="bar-${fileId}" style="width:0%; height:100%; background:${isSelf?'#fff':'#59BC10'}; transition:width 0.1s;"></div></div><div style="display:flex; justify-content:space-between; font-size:10px; opacity:0.8;"><span id="speed-${fileId}">0 KB/s</span><span id="pct-${fileId}">0%</span></div></div>`;
+        // 增加取消按钮
+        div.innerHTML = `
+            <div class="bubble" style="min-width:160px; font-size:12px; position:relative;">
+                <div class="cancel-btn" onclick="cancelTransfer('${fileId}', ${isSelf})">✕</div>
+                <div style="font-weight:bold; margin-bottom:4px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:140px;">${isSelf?'⬆':'⬇'} ${safeName}</div>
+                <div style="background:#eee; height:6px; border-radius:3px; overflow:hidden; margin-bottom:4px;">
+                    <div id="bar-${fileId}" style="width:0%; height:100%; background:${isSelf?'#007AFF':'#34C759'}; transition:width 0.1s;"></div>
+                </div>
+                <div style="display:flex; justify-content:space-between; font-size:10px; opacity:0.6;">
+                    <span id="speed-${fileId}">0 KB/s</span><span id="pct-${fileId}">0%</span>
+                </div>
+            </div>
+        `;
         container.appendChild(div); container.scrollTop = container.scrollHeight;
     }
 
@@ -458,7 +567,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if(row) { row.remove(); appendMsgDOM(msg, msg.isSelf); }
     }
 
-    // --- 6. 交互 ---
+    // --- 7. 交互 & 事件 (PC拖拽修复) ---
     document.getElementById('chat-send-btn').onclick = () => { const txt = document.getElementById('chat-input').value; if(txt) { sendData('text', txt); document.getElementById('chat-input').value=''; } };
     document.getElementById('chat-back-btn').onclick = window.goBack;
 
@@ -467,59 +576,4 @@ document.addEventListener('DOMContentLoaded', () => {
     modeSwitch.onclick = () => {
         isVoiceMode = !isVoiceMode;
         if(isVoiceMode) { textWrapper.classList.add('hidden'); textWrapper.style.display = 'none'; voiceBtn.classList.remove('hidden'); voiceBtn.style.display = 'block'; modeSwitch.innerText = "⌨️"; } 
-        else { voiceBtn.classList.add('hidden'); voiceBtn.style.display = 'none'; textWrapper.classList.remove('hidden'); textWrapper.style.display = 'flex'; modeSwitch.innerText = "🎤"; setTimeout(() => document.getElementById('chat-input').focus(), 100); }
-    };
-
-    // 录音
-    let mediaRecorder, audioChunks;
-    const startRec = async (e) => {
-        if(e) e.preventDefault();
-        try {
-            const stream = await navigator.mediaDevices.getUserMedia({audio:true});
-            let mimeType = 'audio/webm';
-            if (MediaRecorder.isTypeSupported('audio/mp4')) mimeType = 'audio/mp4';
-            else if (MediaRecorder.isTypeSupported('audio/webm;codecs=opus')) mimeType = 'audio/webm;codecs=opus';
-            
-            mediaRecorder = new MediaRecorder(stream, { mimeType });
-            audioChunks = [];
-            mediaRecorder.ondataavailable = e => { if(e.data.size > 0) audioChunks.push(e.data); };
-            mediaRecorder.onstop = () => {
-                const blob = new Blob(audioChunks, {type: mimeType});
-                const voiceFile = new File([blob], "voice_" + Date.now() + ".wav", { type: mimeType });
-                sendFileChunked(voiceFile, mimeType);
-                stream.getTracks().forEach(track => track.stop());
-            };
-            mediaRecorder.start();
-            voiceBtn.classList.add('recording'); voiceBtn.innerText="RECORDING...";
-        } catch(e) { alert("Mic Error: " + e.message); }
-    };
-    const stopRec = (e) => { if(e) e.preventDefault(); if(mediaRecorder && mediaRecorder.state !== 'inactive') { mediaRecorder.stop(); voiceBtn.classList.remove('recording'); voiceBtn.innerText="HOLD TO SPEAK"; } };
-    voiceBtn.addEventListener('touchstart', startRec, {passive: false}); voiceBtn.addEventListener('touchend', stopRec, {passive: false});
-    voiceBtn.addEventListener('mousedown', startRec); voiceBtn.addEventListener('mouseup', stopRec);
-
-    // 文件
-    const fileInput = document.getElementById('chat-file-input');
-    document.getElementById('file-btn').onclick = () => fileInput.click();
-    fileInput.onchange = (e) => { const file = e.target.files[0]; if(file) { sendFileChunked(file); fileInput.value = ''; } };
-
-    window.editMyName = () => { const n = prompt("New Name:", db.profile.nickname); if(n) { db.profile.nickname=n; saveDB(); document.getElementById('my-nickname').innerText=n; } };
-    window.editFriendName = () => { if(activeChatId) { const f=db.friends.find(x=>x.id===activeChatId); const n=prompt("Rename:", f.alias||f.id); if(n){ f.alias=n; saveDB(); document.getElementById('chat-partner-name').innerText=n; renderFriends(); } } };
-    const fm = document.getElementById('fm-radio');
-    document.getElementById('fm-btn').onclick = () => { if(fm.paused) { fm.play(); alert("FM ON"); } else { fm.pause(); alert("FM OFF"); } };
-
-    const sGrid = document.getElementById('sticker-grid');
-    for(let i=0; i<12; i++) {
-        const url = `https://api.dicebear.com/7.x/fun-emoji/svg?seed=${i*13}&backgroundColor=transparent`;
-        const img = document.createElement('img'); img.src=url; img.className='sticker-item'; img.style.width='60px';
-        img.onclick = () => { if(activeChatId) { sendData('sticker', url); document.getElementById('sticker-panel').classList.add('hidden'); } };
-        sGrid.appendChild(img);
-    }
-    document.getElementById('sticker-btn').onclick = () => document.getElementById('sticker-panel').classList.toggle('hidden');
-
-    const drag = document.getElementById('drag-overlay');
-    window.addEventListener('dragenter', () => { if(activeChatId) drag.classList.remove('hidden'); });
-    drag.addEventListener('dragleave', (e) => { if(e.target===drag) drag.classList.add('hidden'); });
-    window.addEventListener('dragover', e => e.preventDefault());
-    window.addEventListener('drop', e => { e.preventDefault(); drag.classList.add('hidden'); if(activeChatId && e.dataTransfer.files[0]) { sendFileChunked(e.dataTransfer.files[0]); } });
-    document.body.onclick = () => document.getElementById('msg-sound').load();
-});
+        else { voiceBtn.classList.add('hidden'); voiceBtn.style.display = 'none'; textWrapper.classList.remove('hidden'); textWrapper.style.display = 'flex'; modeSwitch.innerText = "🎤"; setTimeout(()
