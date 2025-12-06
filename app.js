@@ -3,56 +3,77 @@ document.addEventListener('DOMContentLoaded', () => {
     // ★★★ 请填入你的 Render 地址 ★★★
     const SERVER_URL = 'https://wojak-backend.onrender.com';
 
-    // --- 0. 动态样式 ---
+    // --- 0. 动态样式 (UI 风格化统一 + 自适应修复) ---
     const styleSheet = document.createElement("style");
     styleSheet.innerText = `
-        :root { --glass-bg: rgba(255, 255, 255, 0.95); --primary: #59BC10; --primary-dark: #46960C; --danger: #FF3B30; --shadow-sm: 0 2px 8px rgba(0,0,0,0.08); }
-        body { background: #F2F2F7; font-family: -apple-system, sans-serif; -webkit-tap-highlight-color: transparent; }
+        :root { 
+            --glass-bg: rgba(255, 255, 255, 0.95); 
+            --primary: #59BC10; 
+            --primary-dark: #46960C; 
+            --danger: #FF3B30; 
+            --shadow-soft: 0 4px 20px rgba(0,0,0,0.06);
+            --shadow-card: 0 2px 6px rgba(0,0,0,0.04);
+            --bg-color: #F5F7F5;
+        }
+        body { background: var(--bg-color); font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; -webkit-tap-highlight-color: transparent; }
         .defi-nav { display: none !important; }
         .scroll-content { padding-bottom: 30px !important; }
-        .k-list-item { background: #fff; border-radius: 14px; padding: 14px; margin-bottom: 10px; box-shadow: var(--shadow-sm); transition: transform 0.1s; position: relative; }
-        .k-list-item:active { transform: scale(0.98); background: #f2f2f2; }
-        .list-edit-btn { padding: 8px; color: #999; font-size: 16px; cursor: pointer; z-index: 10; margin-left: auto; }
+        
+        /* 列表项 (仿 iOS 质感) */
+        .k-list-item { 
+            background: #fff; border-radius: 16px; padding: 12px 16px; margin-bottom: 12px; 
+            box-shadow: var(--shadow-card); transition: transform 0.1s; position: relative; border: 1px solid rgba(0,0,0,0.02);
+        }
+        .k-list-item:active { transform: scale(0.98); background: #fafafa; }
+        .list-edit-btn { padding: 8px; color: #ccc; font-size: 16px; cursor: pointer; z-index: 10; margin-left: auto; transition: color 0.2s; }
+        .list-edit-btn:hover { color: var(--primary); }
 
         /* 拨号盘 */
         .numpad-container { display: flex; flex-direction: column; align-items: center; padding: 10px; }
-        .id-display-screen { font-size: 36px; font-weight: 800; letter-spacing: 6px; color: var(--primary); margin-bottom: 20px; border-bottom: 2px solid #eee; width: 80%; text-align: center; height: 50px; line-height: 50px; }
+        .id-display-screen { font-size: 36px; font-weight: 800; letter-spacing: 6px; color: var(--primary); margin-bottom: 20px; border-bottom: 2px solid #f0f0f0; width: 80%; text-align: center; height: 50px; line-height: 50px; }
         .numpad-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 15px; width: 100%; max-width: 260px; }
-        .num-btn { width: 65px; height: 65px; border-radius: 50%; background: #fff; box-shadow: 0 3px 0 #eee; border: 1px solid #ddd; font-size: 24px; font-weight: bold; color: #333; display: flex; justify-content: center; align-items: center; cursor: pointer; user-select: none; }
-        .num-btn:active { transform: translateY(3px); box-shadow: none; background: #eee; }
+        .num-btn { width: 65px; height: 65px; border-radius: 50%; background: #fff; box-shadow: 0 4px 0 #f0f0f0; border: 1px solid #eee; font-size: 24px; font-weight: bold; color: #333; display: flex; justify-content: center; align-items: center; cursor: pointer; user-select: none; }
+        .num-btn:active { transform: translateY(3px); box-shadow: none; background: #f9f9f9; }
         .num-btn.clear { color: var(--danger); font-size: 18px; }
         .num-btn.connect { background: var(--primary); color: #fff; border: none; box-shadow: 0 4px 10px rgba(89, 188, 16, 0.3); font-size: 30px; }
         .num-btn.connect:active { background: var(--primary-dark); }
 
         /* 气泡与媒体 */
-        .bubble { border: none !important; border-radius: 18px !important; padding: 10px 14px; box-shadow: 0 1px 2px rgba(0,0,0,0.1); max-width: 80%; }
-        .msg-row.self .bubble { background: var(--primary); color: #fff; }
-        .msg-row.other .bubble { background: #fff; color: #000; }
+        .bubble { 
+            border: none !important; border-radius: 18px !important; padding: 10px 14px; 
+            box-shadow: 0 1px 3px rgba(0,0,0,0.08); max-width: 80%; width: fit-content;
+        }
+        .msg-row.self .bubble { background: var(--primary); color: #fff; border-bottom-right-radius: 4px !important; }
+        .msg-row.other .bubble { background: #fff; color: #333; border-bottom-left-radius: 4px !important; }
         
         .thumb-box { position: relative; display: inline-block; max-width: 200px; border-radius: 12px; overflow: hidden; background: #000; }
         .thumb-img { max-width: 100%; height: auto; display: block; object-fit: contain; }
         video.thumb-img { object-fit: cover; max-height: 200px; }
-        .sticker-img { width: 100px !important; height: 100px !important; object-fit: contain !important; display: block; }
         
-        /* ★ 文档卡片样式修复 ★ */
+        /* ★ 表情包样式 ★ */
+        .sticker-img { width: 100px !important; height: 100px !important; object-fit: contain !important; display: block; margin: 5px 0; }
+        
+        /* ★ 文档卡片 (自适应修复) ★ */
         .doc-card { 
-            display: flex; align-items: center; gap: 12px; 
-            background: rgba(255,255,255,0.9); padding: 12px; 
-            border-radius: 10px; color: #333; text-decoration: none; 
-            width: 100%; box-sizing: border-box; min-width: 200px;
+            display: flex; align-items: center; gap: 10px; 
+            background: rgba(255,255,255,0.15); /* 半透明背景适应深色气泡 */
+            padding: 8px 12px; border-radius: 8px; 
+            color: inherit; text-decoration: none; 
+            min-width: 160px; max-width: 100%;
         }
-        .msg-row.self .doc-card { color: #000; }
-        .doc-icon { font-size: 28px; flex-shrink: 0; }
+        .msg-row.other .doc-card { background: #f5f5f5; color: #333; }
+        .doc-icon { font-size: 24px; flex-shrink: 0; }
         .doc-info { display: flex; flex-direction: column; overflow: hidden; flex: 1; min-width: 0; }
         .doc-name { 
-            font-weight: bold; font-size: 13px; margin-bottom: 2px;
+            font-weight: 600; font-size: 13px; margin-bottom: 2px;
             white-space: nowrap; overflow: hidden; text-overflow: ellipsis; 
         }
-        .doc-type { font-size: 10px; color: #666; text-transform: uppercase; font-weight: 600; }
+        .doc-type { font-size: 9px; opacity: 0.8; text-transform: uppercase; font-weight: 600; }
 
         .voice-bubble { display: flex; align-items: center; gap: 8px; min-width: 100px; }
         .wave-visual { display: flex; align-items: center; gap: 3px; height: 16px; }
-        .wave-bar { width: 3px; height: 30%; background: #ccc; border-radius: 2px; }
+        .wave-bar { width: 3px; height: 30%; background: rgba(255,255,255,0.5); border-radius: 2px; }
+        .msg-row.other .wave-bar { background: #ccc; }
         .voice-bubble.playing .wave-bar { animation: wave 0.5s infinite ease-in-out; background: #fff !important; }
         .voice-bubble.other.playing .wave-bar { background: var(--primary) !important; }
         @keyframes wave { 0%,100%{height:30%;} 50%{height:100%;} }
@@ -60,7 +81,7 @@ document.addEventListener('DOMContentLoaded', () => {
         .voice-bubble.playing .wave-bar:nth-child(3) { animation-delay: 0.2s; }
         
         .audio-player { display: flex; align-items: center; gap: 8px; min-width: 140px; }
-        .audio-btn { width: 28px; height: 28px; border-radius: 50%; border: none; background: rgba(255,255,255,0.3); color: inherit; display: flex; justify-content: center; align-items: center; cursor: pointer; font-size: 12px; }
+        .audio-btn { width: 28px; height: 28px; border-radius: 50%; border: none; background: rgba(255,255,255,0.25); color: inherit; display: flex; justify-content: center; align-items: center; cursor: pointer; font-size: 12px; }
         .msg-row.other .audio-btn { background: #eee; color: #333; }
 
         .edit-pen { margin-left: 8px; cursor: pointer; font-size: 14px; opacity: 0.7; }
@@ -86,7 +107,7 @@ document.addEventListener('DOMContentLoaded', () => {
     document.body.insertAdjacentHTML('beforeend', previewModalHTML);
 
     // --- 1. 数据 ---
-    const DB_KEY = 'pepe_v45_final_omega';
+    const DB_KEY = 'pepe_v48_ui_final';
     const CHUNK_SIZE = 12 * 1024;
     let db;
     
@@ -122,14 +143,14 @@ document.addEventListener('DOMContentLoaded', () => {
             div.className = `k-list-item ${f.unread ? 'shake-active' : ''}`;
             let nameHtml = `
                 <div style="display:flex; align-items:center; justify-content:space-between;">
-                    <div style="font-weight:bold; font-size:16px;">${f.alias || f.id}</div>
+                    <div style="font-weight:bold; font-size:16px; color:#333;">${f.alias || f.id}</div>
                     <div class="list-edit-btn" onclick="event.stopPropagation(); window.editContactAlias('${f.id}')">✎</div>
                 </div>`;
-            if(f.unread) nameHtml = `<div style="display:flex;align-items:center;gap:6px;"><div style="font-weight:bold;">${f.alias||f.id}</div><div class="marquee-box"><div class="marquee-text">📢 MESSAGE COMING...</div></div></div>`;
+            if(f.unread) nameHtml = `<div style="display:flex;align-items:center;gap:6px;"><div style="font-weight:bold;color:#333;">${f.alias||f.id}</div><div class="marquee-box"><div class="marquee-text">📢 MESSAGE COMING...</div></div></div>`;
             div.innerHTML = `
                 <div style="display:flex; align-items:center; gap:12px;">
-                    <img src="https://api.dicebear.com/7.x/notionists/svg?seed=${f.id}" style="width:45px; height:45px; border-radius:50%; background:#eee;">
-                    <div style="flex:1;">${nameHtml}<div style="font-size:12px; color:#888;">${f.unread ? '<span style="color:red">● New Message</span>' : 'Tap to chat'}</div></div>
+                    <img src="https://api.dicebear.com/7.x/notionists/svg?seed=${f.id}" style="width:48px; height:48px; border-radius:50%; background:#f2f2f2; border:1px solid #eee;">
+                    <div style="flex:1;">${nameHtml}<div style="font-size:12px; color:#888; margin-top:2px;">${f.unread ? '<span style="color:var(--danger)">● New Message</span>' : 'Tap to chat'}</div></div>
                 </div>`;
             div.onclick = () => { f.unread = false; saveDB(); renderFriends(); openChat(f.id); };
             list.appendChild(div);
@@ -149,20 +170,21 @@ document.addEventListener('DOMContentLoaded', () => {
         let html = '';
 
         if(msg.type==='text') html=`<div class="bubble">${msg.content}</div>`;
-        else if(msg.type==='sticker') html=`<div style="padding:5px;"><img src="${msg.content}" class="sticker-img"></div>`;
+        else if(msg.type==='sticker') html=`<div style="padding:0;"><img src="${msg.content}" class="sticker-img"></div>`;
         else if(msg.type==='voice') {
             html=`<div class="bubble audio-player"><span>🎤</span><button class="audio-btn" onclick="handleAudio('play','${msg.content}')">▶</button><button class="audio-btn" onclick="handleAudio('pause')">⏸</button><button class="audio-btn" onclick="handleAudio('stop')">⏹</button></div>`;
         } 
         else if(msg.type==='image') html=`<div class="bubble" style="padding:4px; background:transparent; box-shadow:none;"><div class="thumb-box" onclick="previewMedia('${msg.content}','image')"><img src="${msg.content}" class="thumb-img"></div></div>`;
         else if(msg.type==='video') html=`<div class="bubble" style="padding:4px; background:transparent; box-shadow:none;"><div class="thumb-box" onclick="previewMedia('${msg.content}','video')"><video src="${msg.content}#t=0.1" class="thumb-img" preload="metadata" muted></video><div style="position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); color:#fff; font-size:30px;">▶</div></div></div>`;
         else if(msg.type==='file') {
-            // ★ 文档样式优化 ★
+            // ★ 自适应文档卡片 ★
             const lowerName = msg.fileName.toLowerCase();
-            let icon = '📂';
+            let icon = '📄';
             if(lowerName.match(/\.(doc|docx)$/)) icon = '📝';
-            else if(lowerName.match(/\.(xls|xlsx)$/)) icon = '📊';
+            else if(lowerName.match(/\.(xls|xlsx|csv)$/)) icon = '📊';
             else if(lowerName.match(/\.(ppt|pptx)$/)) icon = '📉';
             else if(lowerName.match(/\.pdf$/)) icon = '📕';
+            else if(lowerName.match(/\.zip|rar|7z$/)) icon = '📦';
 
             html = `
                 <div class="bubble" style="padding:5px;">
@@ -170,7 +192,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         <div class="doc-icon">${icon}</div>
                         <div class="doc-info">
                             <div class="doc-name">${msg.fileName}</div>
-                            <div class="doc-type">CLICK TO OPEN</div>
+                            <div class="doc-type">CLICK TO SAVE</div>
                         </div>
                     </a>
                 </div>`;
@@ -186,7 +208,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 dataChannel.send(JSON.stringify({ type, content })); 
                 const msgObj = { type, content, isSelf: true, ts: Date.now() };
                 if(!db.history[activeChatId]) db.history[activeChatId] = [];
-                // ★ 修复：后台接收，保存完整对象 ★
                 db.history[activeChatId].push(msgObj); saveDB(); appendMsgDOM(msgObj, true);
                 return;
             } catch(e) {}
@@ -201,7 +222,6 @@ document.addEventListener('DOMContentLoaded', () => {
         db.history[activeChatId].push(msgObj); saveDB(); appendMsgDOM(msgObj, true);
     };
 
-    // ★ 核心修复：纯 DOM 返回逻辑 (解决死循环) ★
     const closeChatUI = () => {
         const chatView = document.getElementById('view-chat');
         chatView.classList.remove('active');
@@ -212,11 +232,9 @@ document.addEventListener('DOMContentLoaded', () => {
     };
 
     window.goBack = () => { 
-        // 优先使用历史回退，触发 popstate
         if (window.history.state && window.history.state.chatOpen) {
             window.history.back();
         } else {
-            // 兜底：如果历史记录乱了，直接关 UI
             closeChatUI();
         }
     };
@@ -233,10 +251,7 @@ document.addEventListener('DOMContentLoaded', () => {
         chatView.classList.remove('right-sheet');
         chatView.classList.add('active');
         
-        // 防抖动：只有当前没在聊天历史里才推
-        if (!window.history.state || window.history.state.id !== id) {
-            window.history.pushState({ chatOpen: true, id: id }, "");
-        }
+        window.history.pushState({ chatOpen: true, id: id }, "");
 
         const container = document.getElementById('messages-container'); 
         container.innerHTML = '';
@@ -357,7 +372,6 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    // P2P Logic
     const initP2P = async (targetId, isInitiator) => {
         if(peerConnection) peerConnection.close();
         isP2PReady = false;
@@ -431,10 +445,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 
                 const finalMsg = { type, content: url, fileName: dl.fileName, isSelf: false, ts: Date.now() };
                 
-                // 1. 如果在当前聊天，更新 UI
                 if(activeChatId === fid) replaceProgressWithContent(p.fileId, finalMsg);
                 
-                // 2. ★ 核心修复：后台接收，保存完整对象，不显示 File Saved 文本 ★
                 if(!db.history[fid]) db.history[fid] = [];
                 db.history[fid].push(finalMsg); 
                 saveDB();
@@ -445,15 +457,12 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    // --- 队列发送 ---
     function addToQueue(file) { uploadQueue.push(file); processQueue(); }
     function processQueue() { if(isSending || uploadQueue.length === 0) return; const file = uploadQueue.shift(); sendFileChunked(file); }
 
     function sendFileChunked(file) {
         if(!activeChatId) { alert("Connect first"); return; }
-        // 尝试P2P
         const useP2P = isP2PReady && dataChannel && dataChannel.readyState === 'open';
-        // 如果P2P不通，必须有Socket
         if(!useP2P && (!socket || !socket.connected)) { alert("No Connection"); return; }
         
         isSending = true;
@@ -467,7 +476,6 @@ document.addEventListener('DOMContentLoaded', () => {
         let offset = 0; let lastTime = Date.now(); let lastBytes = 0; const total = file.size;
         const readNext = () => {
             if(cancelFlag[fileId]) { isSending = false; setTimeout(processQueue, 500); return; }
-            // 断线保护
             if(!useP2P && !socket.connected) { isSending = false; setTimeout(processQueue, 500); return; }
 
             if(offset >= total) {
@@ -482,7 +490,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 const finalMsg = { type, content: URL.createObjectURL(file), fileName: sendName, isSelf: true };
                 replaceProgressWithContent(fileId, finalMsg);
                 if(!db.history[activeChatId]) db.history[activeChatId] = [];
-                // ★ 修复：发送方也保存完整对象 ★
                 db.history[activeChatId].push(finalMsg); saveDB();
                 isSending = false; setTimeout(processQueue, 300); return;
             }
@@ -599,7 +606,6 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('chat-send-btn').onclick = handleSend;
     document.getElementById('chat-input').addEventListener('keypress', (e) => { if(e.key === 'Enter') handleSend(); });
 
-    // ★ 监听返回 (Core Fix) ★
     window.addEventListener('popstate', () => {
         const preview = document.getElementById('media-preview-modal');
         if(!preview.classList.contains('hidden')) { window.closePreview(); return; }
@@ -643,7 +649,6 @@ document.addEventListener('DOMContentLoaded', () => {
         else { t.classList.add('hidden'); t.style.display='none'; v.classList.remove('hidden'); v.style.display='block'; b.innerText='⌨️'; }
     };
 
-    // ★ 多选修复 ★
     const fileInput = document.getElementById('chat-file-input');
     fileInput.setAttribute('multiple', ''); 
     document.getElementById('file-btn').onclick = () => fileInput.click();
@@ -651,7 +656,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if(e.target.files.length > 0) Array.from(e.target.files).forEach(file => addToQueue(file));
     };
     
-    // ★ 动图表情 ★
+    // ★ 动态表情源 ★
     const sGrid = document.getElementById('sticker-grid');
     sGrid.innerHTML = '';
     const gifs = [
@@ -667,7 +672,6 @@ document.addEventListener('DOMContentLoaded', () => {
     gifs.forEach((src, index) => {
         const img = document.createElement('img');
         img.src = src;
-        // Fallback if gif fails
         img.onerror = () => { img.src = `https://api.dicebear.com/7.x/fun-emoji/svg?seed=${index}`; };
         img.className='sticker-item'; 
         img.style.cssText = "width:60px; height:60px; object-fit:contain; cursor:pointer;";
