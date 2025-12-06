@@ -3,7 +3,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // ★★★ 请填入你的 Render 地址 ★★★
     const SERVER_URL = 'https://wojak-backend.onrender.com';
 
-    // --- 0. 样式注入 (修复图片过大、视频缩略图、Mac风格) ---
+    // --- 0. 动态样式 (修复图片适配、表情大小、按钮层级) ---
     try {
         const styleSheet = document.createElement("style");
         styleSheet.innerText = `
@@ -19,30 +19,40 @@ document.addEventListener('DOMContentLoaded', () => {
             .defi-nav { display: none !important; }
             .scroll-content { padding-bottom: 30px !important; }
 
-            /* 图片/视频 强制缩略图大小 */
+            /* ★ 修复4：图片/视频 自适应底框，去除黑边 ★ */
             .thumb-box { 
                 position: relative; 
-                width: 140px; 
-                height: 140px; 
+                max-width: 200px; /* 限制最大宽 */
+                height: auto;     /* 高度自适应 */
                 border-radius: 12px; 
                 overflow: hidden; 
-                background: #000;
-                display: flex; 
-                align-items: center; 
-                justify-content: center;
+                background: transparent; /* 去除黑色背景 */
+                display: inline-block;
+                line-height: 0; /* 防止底部留白 */
             }
             .thumb-img { 
-                width: 100%; 
-                height: 100%; 
-                object-fit: cover; 
+                max-width: 100%; 
+                height: auto; 
+                object-fit: contain; 
                 display: block; 
             }
-            /* 修复气泡内直接插入图片的情况 */
-            .bubble img {
-                max-width: 140px !important;
-                max-height: 140px !important;
-                border-radius: 8px;
-                object-fit: cover;
+            
+            /* 视频特殊处理：给个最小高度方便点击 */
+            .video-box {
+                background: #000;
+                min-width: 120px;
+                min-height: 80px;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+            }
+
+            /* ★ 修复1：表情包强制大小 ★ */
+            .sticker-img { 
+                width: 80px !important; 
+                height: 80px !important; 
+                object-fit: contain !important; 
+                display: block;
             }
 
             /* 气泡样式 */
@@ -78,17 +88,20 @@ document.addEventListener('DOMContentLoaded', () => {
 
             /* 模态框与按钮 */
             .modal-overlay { z-index: 100000 !important; background: rgba(0,0,0,0.6) !important; backdrop-filter: blur(5px); }
-            .cancel-btn { position: absolute; top:-8px; right:-8px; background:rgba(0,0,0,0.6); color:#fff; width:22px; height:22px; border-radius:50%; text-align:center; line-height:22px; font-size:14px; cursor:pointer; z-index:10; }
+            .cancel-btn { position: absolute; top: 5px; right: 5px; background:rgba(0,0,0,0.6); color:#fff; width:22px; height:22px; border-radius:50%; text-align:center; line-height:22px; font-size:14px; cursor:pointer; z-index:10; }
             
             /* 拖拽层 */
             .drag-overlay { display: none; z-index: 99999; }
             .drag-overlay.active { display: flex; }
+
+            /* ★ 修复3：发送按钮层级 ★ */
+            .send-arrow { position: relative; z-index: 50; cursor: pointer; }
         `;
         document.head.appendChild(styleSheet);
     } catch(e) { console.error("UI Init Error", e); }
 
     // --- 1. 数据层 ---
-    const DB_KEY = 'pepe_v33_final_pro_v3';
+    const DB_KEY = 'pepe_v33_fix_v4';
     const CHUNK_SIZE = 12 * 1024;
     let db;
     try {
@@ -116,7 +129,6 @@ document.addEventListener('DOMContentLoaded', () => {
             document.getElementById('my-id-display').innerText = MY_ID;
             document.getElementById('my-nickname').innerText = db.profile.nickname;
             document.getElementById('my-avatar').src = `https://api.dicebear.com/7.x/notionists/svg?seed=${db.profile.avatarSeed}`;
-            // 延时渲染二维码防止卡死
             setTimeout(() => {
                 const qrEl = document.getElementById("qrcode");
                 if(qrEl && window.QRCode) {
@@ -155,24 +167,20 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    // 打开聊天 (修复：手势返回逻辑)
+    // 打开聊天
     function openChat(id) {
-        // 停止语音播报
-        if('speechSynthesis' in window) window.speechSynthesis.cancel();
+        if('speechSynthesis' in window) window.speechSynthesis.cancel(); // 停止语音播报
 
         activeChatId = id; 
         const f = db.friends.find(x => x.id === id);
         document.getElementById('chat-partner-name').innerText = f ? (f.alias || f.id) : id;
         
-        // 状态重置
         document.getElementById('chat-online-dot').className = "status-dot red";
         
-        // 切换视图
         const chatView = document.getElementById('view-chat');
         chatView.classList.remove('right-sheet');
         chatView.classList.add('active');
         
-        // ★ 核心修复：推送历史状态，拦截系统返回键
         window.history.pushState({ chatOpen: true, id: id }, "");
 
         const container = document.getElementById('messages-container'); 
@@ -181,16 +189,13 @@ document.addEventListener('DOMContentLoaded', () => {
         msgs.forEach(m => appendMsgDOM(m, m.isSelf));
     }
 
-    // 处理返回 (监听浏览器后退)
+    // 返回处理
     window.addEventListener('popstate', (event) => {
-        // 如果当前预览开着，先关预览
         const previewModal = document.getElementById('media-preview-modal');
         if (!previewModal.classList.contains('hidden')) {
             window.closePreview();
             return;
         }
-        
-        // 如果在聊天界面，则关闭聊天回到主页
         const chatView = document.getElementById('view-chat');
         if (chatView.classList.contains('active')) {
             chatView.classList.remove('active');
@@ -199,13 +204,9 @@ document.addEventListener('DOMContentLoaded', () => {
             renderFriends();
         }
     });
+    window.goBack = () => window.history.back();
 
-    // 手动点击返回按钮
-    window.goBack = () => {
-        window.history.back(); // 触发 popstate
-    };
-
-    // --- 4. 消息渲染 (修复：全尺寸图片/视频缩略图) ---
+    // --- 4. 消息渲染 (★ 修复：图片适配 & 表情大小) ---
     function appendMsgDOM(msg, isSelf) {
         const box = document.getElementById('messages-container');
         const div = document.createElement('div'); 
@@ -217,7 +218,8 @@ document.addEventListener('DOMContentLoaded', () => {
             html=`<div class="bubble">${msg.content}</div>`;
         } 
         else if(msg.type==='sticker') {
-            html=`<div class="bubble" style="background:transparent;box-shadow:none;"><img src="${msg.content}" style="width:100px; height:100px; object-fit:contain;"></div>`;
+            // ★ 修复：表情包不加 bubble 背景，直接显示图片，且限制大小
+            html=`<div style="padding:5px;"><img src="${msg.content}" class="sticker-img" style="width:80px; height:80px; object-fit:contain;"></div>`;
         }
         else if(msg.type==='voice') {
             html=`<div id="voice-${uid}" class="bubble voice-bubble ${isSelf?'self':'other'}" style="cursor:pointer;" onclick="playVoice('${msg.content}', 'voice-${uid}')">
@@ -226,19 +228,17 @@ document.addEventListener('DOMContentLoaded', () => {
                   </div>`;
         } 
         else if(msg.type==='image') {
-            // ★ 修复：强制使用 thumb-box 限制大小
-            html=`<div class="bubble" style="padding:4px;">
+            // ★ 修复：thumb-box 宽高自适应，不再全屏
+            html=`<div class="bubble" style="padding:4px; background:transparent; box-shadow:none;">
                     <div class="thumb-box" onclick="previewMedia('${msg.content}','image')">
                         <img src="${msg.content}" class="thumb-img">
                     </div>
                   </div>`;
         } 
         else if(msg.type==='video') {
-            // ★ 修复：视频显示缩略图占位符
-            html=`<div class="bubble" style="padding:4px;">
-                    <div class="thumb-box" onclick="previewMedia('${msg.content}','video')">
-                        <video src="${msg.content}#t=0.5" class="thumb-img" preload="metadata"></video>
-                        <div style="position:absolute; color:#fff; font-size:24px; text-shadow:0 2px 4px rgba(0,0,0,0.5);">▶</div>
+            html=`<div class="bubble" style="padding:4px; background:transparent; box-shadow:none;">
+                    <div class="thumb-box video-box" onclick="previewMedia('${msg.content}','video')">
+                        <span style="color:#fff; font-size:24px;">▶</span>
                     </div>
                   </div>`;
         } 
@@ -314,7 +314,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 friend.unread = true;
                 saveDB();
                 renderFriends();
-                // 提示音 (限制频率)
                 if('speechSynthesis' in window && !window.speechSynthesis.speaking) {
                     const u = new SpeechSynthesisUtterance("Message coming");
                     const v = window.speechSynthesis.getVoices().find(x=>x.name.includes('Female'));
@@ -324,7 +323,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 if(navigator.vibrate) navigator.vibrate(100);
             }
 
-            // 隧道接收
             if(msg.type === 'tunnel_file_packet') {
                 try {
                     const packet = JSON.parse(msg.content);
@@ -450,11 +448,11 @@ document.addEventListener('DOMContentLoaded', () => {
         } catch(e) { return new Blob([], {type}); }
     }
 
-    // 录音 (修复：权限请求)
+    // 录音
     const vBtn = document.getElementById('voice-record-btn');
     let rec, chunks;
     
-    // 使用 click 而不是 touchstart 来请求权限（更稳定）
+    // 修复权限：通过点击请求
     const reqPerms = async () => {
         try { await navigator.mediaDevices.getUserMedia({audio:true}); } catch(e){}
     };
@@ -475,7 +473,7 @@ document.addEventListener('DOMContentLoaded', () => {
             };
             rec.start();
             vBtn.innerText="RECORDING..."; vBtn.classList.add('recording');
-        } catch(e){ alert("Enable Mic!"); }
+        } catch(e){ alert("Mic Required!"); }
     };
     const stopR = (e) => {
         e.preventDefault();
@@ -488,7 +486,20 @@ document.addEventListener('DOMContentLoaded', () => {
     vBtn.addEventListener('mousedown', startR); vBtn.addEventListener('mouseup', stopR);
     vBtn.addEventListener('touchstart', startR); vBtn.addEventListener('touchend', stopR);
 
-    // 拖拽修复 (防止文件夹)
+    // ★ 修复3：文本发送绑定 ★
+    const sendBtn = document.getElementById('chat-send-btn');
+    const handleSend = (e) => {
+        e.preventDefault();
+        const t = document.getElementById('chat-input');
+        if(t.value.trim()) { 
+            sendData('text', t.value); 
+            t.value=''; 
+        }
+    };
+    sendBtn.onclick = handleSend;
+    sendBtn.ontouchstart = handleSend;
+
+    // 拖拽修复 (★ 修复2：文件夹判定 ★)
     const drag = document.getElementById('drag-overlay');
     window.addEventListener('dragenter', () => { if(activeChatId) drag.classList.remove('hidden'); });
     drag.addEventListener('dragleave', (e) => { if(e.target===drag) drag.classList.add('hidden'); });
@@ -497,16 +508,16 @@ document.addEventListener('DOMContentLoaded', () => {
         e.preventDefault(); drag.classList.add('hidden');
         if(activeChatId && e.dataTransfer.files[0]) {
             const f = e.dataTransfer.files[0];
-            // 简单文件夹检测：大小为 4096倍数 且 无类型
-            if(!f.type && (f.size===0 || f.size%4096===0)) {
-                alert("Folders not supported."); 
+            // 只有当 size 为 0 时才断定为文件夹（更宽松的判定）
+            if(!f.type && f.size===0) {
+                alert("Folder not supported"); 
             } else {
                 sendFileChunked(f);
             }
         }
     });
 
-    // 绑定 Scan & Add (优先绑定)
+    // 绑定 Scan & Add
     const bindBtn = (id, fn) => { const el=document.getElementById(id); if(el) { el.onclick=fn; el.ontouchstart=fn; }};
     
     // Add ID
@@ -518,7 +529,6 @@ document.addEventListener('DOMContentLoaded', () => {
         const v = document.getElementById('manual-id-input').value;
         if(v.length===4) { 
             window.closeAllModals(); 
-            // 修复：添加好友逻辑
             if(v !== MY_ID) {
                 if(!db.friends.find(f => f.id === v)) {
                     db.friends.push({ id: v, addedAt: Date.now(), alias: `User ${v}`, unread: false });
@@ -554,7 +564,6 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     // 其他事件
-    document.getElementById('chat-send-btn').onclick = () => { const t = document.getElementById('chat-input'); if(t.value) { sendData('text', t.value); t.value=''; } };
     document.getElementById('chat-back-btn').onclick = window.goBack;
     
     // 切换输入模式
@@ -577,12 +586,23 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('file-btn').onclick = () => document.getElementById('chat-file-input').click();
     document.getElementById('chat-file-input').onchange = e => { if(e.target.files[0]) sendFileChunked(e.target.files[0]); };
     
+    // ★ 修复1：表情包修复 ★
     const sGrid = document.getElementById('sticker-grid');
+    sGrid.innerHTML = '';
     for(let i=0; i<12; i++) {
         const img = document.createElement('img');
         img.src = `https://api.dicebear.com/7.x/fun-emoji/svg?seed=${i*13}&backgroundColor=transparent`;
         img.className='sticker-item'; 
-        img.onclick = () => { if(activeChatId) { sendData('sticker', img.src); document.getElementById('sticker-panel').classList.add('hidden'); } };
+        // 强制 JS 内联样式，确保大小
+        img.style.cssText = "width:60px; height:60px; object-fit:contain; cursor:pointer;";
+        img.onclick = () => { 
+            if(activeChatId) { 
+                sendData('sticker', img.src); 
+                document.getElementById('sticker-panel').classList.add('hidden'); 
+            } else {
+                alert("Open a chat first");
+            }
+        };
         sGrid.appendChild(img);
     }
     document.getElementById('sticker-btn').onclick = () => document.getElementById('sticker-panel').classList.toggle('hidden');
