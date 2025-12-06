@@ -18,12 +18,17 @@ document.addEventListener('DOMContentLoaded', () => {
         .k-list-item { background: #fff; border-radius: 14px; padding: 14px; margin-bottom: 10px; box-shadow: var(--shadow-sm); transition: transform 0.1s; }
         .k-list-item:active { transform: scale(0.98); background: #f2f2f2; }
         
-        /* 拨号盘 */
+        /* 拨号盘修正 */
         .numpad-container { display: flex; flex-direction: column; align-items: center; padding: 10px; }
-        .id-display-screen { font-size: 36px; font-weight: 800; letter-spacing: 6px; color: var(--primary); margin-bottom: 20px; border-bottom: 2px solid #eee; width: 80%; text-align: center; }
+        .id-display-screen { font-size: 36px; font-weight: 800; letter-spacing: 6px; color: var(--primary); margin-bottom: 20px; border-bottom: 2px solid #eee; width: 80%; text-align: center; height: 50px; }
         .numpad-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 15px; width: 100%; max-width: 260px; }
-        .num-btn { width: 60px; height: 60px; border-radius: 50%; background: #fff; box-shadow: 0 3px 0 #eee; border: 1px solid #ddd; font-size: 24px; font-weight: bold; color: #333; display: flex; justify-content: center; align-items: center; cursor: pointer; }
-        .num-btn:active { transform: translateY(3px); box-shadow: none; background: var(--primary); color: #fff; }
+        .num-btn { width: 60px; height: 60px; border-radius: 50%; background: #fff; box-shadow: 0 3px 0 #eee; border: 1px solid #ddd; font-size: 24px; font-weight: bold; color: #333; display: flex; justify-content: center; align-items: center; cursor: pointer; user-select: none; }
+        .num-btn:active { transform: translateY(3px); box-shadow: none; background: #eee; }
+        
+        /* 特殊按钮样式 */
+        .num-btn.clear { color: var(--danger); font-size: 18px; }
+        .num-btn.connect { background: var(--primary); color: #fff; font-size: 28px; border: none; box-shadow: 0 4px 10px rgba(89, 188, 16, 0.3); }
+        .num-btn.connect:active { background: #46960C; }
 
         /* 气泡 */
         .bubble { border: none !important; border-radius: 18px !important; padding: 10px 14px; box-shadow: 0 1px 2px rgba(0,0,0,0.1); max-width: 80%; }
@@ -43,9 +48,7 @@ document.addEventListener('DOMContentLoaded', () => {
         .voice-bubble.playing .wave-bar:nth-child(2) { animation-delay: 0.1s; }
         .voice-bubble.playing .wave-bar:nth-child(3) { animation-delay: 0.2s; }
 
-        /* 按钮 */
         .cancel-btn { position: absolute; top:5px; right:5px; background:rgba(0,0,0,0.6); color:#fff; width:22px; height:22px; border-radius:50%; text-align:center; line-height:22px; font-size:12px; cursor:pointer; z-index:10; }
-        
         .modal-overlay { z-index: 100000 !important; background: rgba(0,0,0,0.6) !important; backdrop-filter: blur(5px); }
         .modal-box { border-radius: 20px; overflow: hidden; }
         .drag-overlay { display: none; z-index: 99999; }
@@ -61,8 +64,8 @@ document.addEventListener('DOMContentLoaded', () => {
     </div>`;
     document.body.insertAdjacentHTML('beforeend', previewModalHTML);
 
-    // --- 1. 数据与状态 ---
-    const DB_KEY = 'pepe_v35_folder_fix';
+    // --- 1. 数据 ---
+    const DB_KEY = 'pepe_v36_final_numpad';
     const CHUNK_SIZE = 12 * 1024;
     let db;
     try {
@@ -75,8 +78,10 @@ document.addEventListener('DOMContentLoaded', () => {
     const saveDB = () => localStorage.setItem(DB_KEY, JSON.stringify(db));
     const MY_ID = db.profile.id;
 
-    // --- 2. 拨号盘 ---
+    // --- 2. 拨号盘逻辑 (含握手按钮) ---
     let dialInput = "";
+    
+    // 生成拨号盘
     const setupDialpad = () => {
         const modalBody = document.querySelector('#add-overlay .modal-body');
         if (modalBody) {
@@ -87,21 +92,47 @@ document.addEventListener('DOMContentLoaded', () => {
                         <div class="num-btn" onclick="dial(1)">1</div><div class="num-btn" onclick="dial(2)">2</div><div class="num-btn" onclick="dial(3)">3</div>
                         <div class="num-btn" onclick="dial(4)">4</div><div class="num-btn" onclick="dial(5)">5</div><div class="num-btn" onclick="dial(6)">6</div>
                         <div class="num-btn" onclick="dial(7)">7</div><div class="num-btn" onclick="dial(8)">8</div><div class="num-btn" onclick="dial(9)">9</div>
-                        <div class="num-btn" style="color:red" onclick="dial('C')">C</div><div class="num-btn" onclick="dial(0)">0</div>
+                        <div class="num-btn clear" onclick="dial('C')">C</div>
+                        <div class="num-btn" onclick="dial(0)">0</div>
+                        <div class="num-btn connect" onclick="dial('OK')">🤝</div>
                     </div>
                 </div>`;
         }
     };
+    
     window.dial = (key) => {
         const display = document.getElementById('dial-display');
-        if (key === 'C') { dialInput = ""; display.innerText = "____"; return; }
-        if (dialInput.length < 4) {
+        
+        // 清除
+        if (key === 'C') { 
+            dialInput = ""; 
+            display.innerText = "____"; 
+            return; 
+        }
+        
+        // 确认连接
+        if (key === 'OK') {
+            if (dialInput.length === 4) {
+                if (dialInput === MY_ID) {
+                    alert("Cannot add yourself!");
+                    return;
+                }
+                window.closeAllModals();
+                handleAddFriend(dialInput); // 触发添加和跳转
+                dialInput = "";
+                display.innerText = "____";
+            } else {
+                alert("Please enter 4 digits ID");
+            }
+            return;
+        }
+        
+        // 输入数字
+        if (dialInput.length < 4 && typeof key === 'number') {
             dialInput += key;
             display.innerText = dialInput.padEnd(4, '_');
-            if (dialInput.length === 4) {
-                if(navigator.vibrate) navigator.vibrate(50);
-                setTimeout(() => { handleAddFriend(dialInput); window.closeAllModals(); dialInput=""; display.innerText="____"; }, 200);
-            }
+            // 震动反馈
+            if(navigator.vibrate) navigator.vibrate(30);
         }
     };
 
@@ -126,18 +157,17 @@ document.addEventListener('DOMContentLoaded', () => {
         openChat(id);
     }
 
-    // --- 3. 网络与传输 (支持文件夹队列) ---
+    // --- 3. 网络与传输 (队列版) ---
     let socket = null;
     let activeChatId = null;
     let activeDownloads = {};
     let isSending = false;
     let cancelFlag = {};
-    let uploadQueue = []; // ★ 发送队列：解决文件夹多文件并发问题
+    let uploadQueue = [];
 
     if(!SERVER_URL.includes('onrender')) alert("Configure SERVER_URL!");
     else {
         socket = io(SERVER_URL, { reconnection: true, transports: ['websocket'], upgrade: false });
-        
         const registerSocket = () => { if(socket.connected) socket.emit('register', MY_ID); };
         socket.on('connect', () => { document.getElementById('conn-status').className = "status-dot green"; registerSocket(); isSending = false; processQueue(); });
         socket.on('disconnect', () => { document.getElementById('conn-status').className = "status-dot red"; isSending = false; });
@@ -209,12 +239,8 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    // --- ★ 队列发送逻辑 (支持文件夹) ★ ---
-    function addToQueue(file) {
-        uploadQueue.push(file);
-        processQueue();
-    }
-
+    // --- 队列发送 ---
+    function addToQueue(file) { uploadQueue.push(file); processQueue(); }
     function processQueue() {
         if(isSending || uploadQueue.length === 0) return;
         const file = uploadQueue.shift();
@@ -223,8 +249,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function sendFileChunked(file) {
         if(!activeChatId || !socket || !socket.connected) { alert("Connect first"); return; }
-        
-        isSending = true; // 上锁
+        isSending = true;
         const fileId = Date.now() + '-' + Math.random().toString(36).substr(2,9);
         const sendName = file.name || `file_${Date.now()}`;
         const sendType = file.type || 'application/octet-stream';
@@ -233,32 +258,20 @@ document.addEventListener('DOMContentLoaded', () => {
         appendProgressBubble(activeChatId, fileId, sendName, true);
         
         let offset = 0; let lastTime = Date.now(); let lastBytes = 0; const total = file.size;
-
         const readNext = () => {
-            if(cancelFlag[fileId] || !socket.connected) { 
-                isSending = false; 
-                setTimeout(processQueue, 500); // 尝试处理下一个
-                return; 
-            }
-            
+            if(cancelFlag[fileId] || !socket.connected) { isSending = false; setTimeout(processQueue, 500); return; }
             if(offset >= total) {
                 socket.emit('send_private', { targetId: activeChatId, type: 'tunnel_file_packet', content: JSON.stringify({ subType: 'end', fileId }) });
-                
                 let type = 'file';
                 if(sendType.startsWith('image')) type = 'image';
                 else if(sendType.startsWith('video')) type = 'video';
                 else if(sendType.startsWith('audio')) type = 'voice';
-                
                 const finalMsg = { type, content: URL.createObjectURL(file), fileName: sendName, isSelf: true };
                 replaceProgressWithContent(fileId, finalMsg);
                 if(!db.history[activeChatId]) db.history[activeChatId] = [];
                 db.history[activeChatId].push({...finalMsg, content: '[File Sent]', type: 'text'}); saveDB();
-                
-                isSending = false; 
-                setTimeout(processQueue, 300); // ★ 触发队列下一个
-                return;
+                isSending = false; setTimeout(processQueue, 300); return;
             }
-
             const chunk = file.slice(offset, offset + CHUNK_SIZE);
             const r = new FileReader();
             r.onload = e => {
@@ -281,24 +294,19 @@ document.addEventListener('DOMContentLoaded', () => {
         readNext();
     }
 
-    // --- ★ 文件夹遍历逻辑 ★ ---
+    // --- 文件夹遍历 ---
     function traverseFileTree(item, path) {
         path = path || "";
-        if (item.isFile) {
-            item.file(function(file) {
-                addToQueue(file); // 加入发送队列
-            });
-        } else if (item.isDirectory) {
+        if (item.isFile) { item.file(function(file) { addToQueue(file); }); } 
+        else if (item.isDirectory) {
             var dirReader = item.createReader();
             dirReader.readEntries(function(entries) {
-                for (var i = 0; i < entries.length; i++) {
-                    traverseFileTree(entries[i], path + item.name + "/");
-                }
+                for (var i = 0; i < entries.length; i++) traverseFileTree(entries[i], path + item.name + "/");
             });
         }
     }
 
-    // --- UI 辅助 ---
+    // --- UI Helpers ---
     function b64toBlob(b64, type) {
         try {
             const bin = atob(b64); const arr = new Uint8Array(bin.length);
@@ -323,11 +331,9 @@ document.addEventListener('DOMContentLoaded', () => {
             rec.onstop = () => {
                 const b = new Blob(chunks, {type:mime});
                 const f = new File([b], "voice.wav", {type:mime});
-                addToQueue(f); // 走队列
-                s.getTracks().forEach(t=>t.stop());
+                addToQueue(f); s.getTracks().forEach(t=>t.stop());
             };
-            rec.start();
-            vBtn.innerText="RECORDING..."; vBtn.classList.add('recording');
+            rec.start(); vBtn.innerText="RECORDING..."; vBtn.classList.add('recording');
         } catch(e){ alert("Mic Required!"); }
     };
     const stopR = (e) => {
@@ -355,7 +361,7 @@ document.addEventListener('DOMContentLoaded', () => {
         activeChatId = null; renderFriends();
     });
 
-    // ★ 拖拽 (支持文件夹) ★
+    // 拖拽
     const drag = document.getElementById('drag-overlay');
     window.addEventListener('dragenter', () => { if(activeChatId) drag.classList.remove('hidden'); });
     drag.addEventListener('dragleave', (e) => { if(e.target===drag) drag.classList.add('hidden'); });
@@ -363,21 +369,19 @@ document.addEventListener('DOMContentLoaded', () => {
     window.addEventListener('drop', e => { 
         e.preventDefault(); drag.classList.add('hidden');
         if(!activeChatId) return;
-
-        // 使用 items API 进行遍历
         const items = e.dataTransfer.items;
         if(items) {
             for(let i=0; i<items.length; i++) {
                 const item = items[i].webkitGetAsEntry();
                 if(item) traverseFileTree(item);
             }
-        } else {
-            // 降级处理
-            if(e.dataTransfer.files[0]) addToQueue(e.dataTransfer.files[0]);
-        }
+        } else if(e.dataTransfer.files[0]) addToQueue(e.dataTransfer.files[0]);
     });
 
-    document.getElementById('add-id-btn').onclick = () => { document.getElementById('add-overlay').classList.remove('hidden'); dialInput=""; document.getElementById('dial-display').innerText="____"; };
+    document.getElementById('add-id-btn').onclick = () => { 
+        document.getElementById('add-overlay').classList.remove('hidden'); 
+        dialInput=""; document.getElementById('dial-display').innerText="____"; 
+    };
     document.getElementById('scan-btn').onclick = () => {
         document.getElementById('qr-overlay').classList.remove('hidden');
         setTimeout(() => {
@@ -397,7 +401,7 @@ document.addEventListener('DOMContentLoaded', () => {
     };
 
     document.getElementById('file-btn').onclick = () => document.getElementById('chat-file-input').click();
-    document.getElementById('chat-file-input').onchange = e => { if(e.target.files[0]) addToQueue(e.target.files[0]); }; // 走队列
+    document.getElementById('chat-file-input').onchange = e => { if(e.target.files[0]) addToQueue(e.target.files[0]); };
     
     const sGrid = document.getElementById('sticker-grid');
     sGrid.innerHTML = '';
