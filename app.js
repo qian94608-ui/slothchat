@@ -35,9 +35,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // --- 1. 全局变量 ---
     const DB_KEY = 'pepe_v33_final';
-    const CHUNK_SIZE = 16 * 1024; // 16KB 分片
-    const activeDownloads = {};   // 接收队列
-    let isSending = false;        // 发送锁
+    const CHUNK_SIZE = 12 * 1024; // 降低到 12KB 以适应 JSON 编码膨胀
+    const activeDownloads = {};   
+    let isSending = false;        
     
     // 预览逻辑
     window.previewMedia = (url, type) => {
@@ -158,13 +158,12 @@ document.addEventListener('DOMContentLoaded', () => {
         }, 300);
     };
 
-    // --- 4. 聊天与网络 (★ 修复：无状态接收逻辑) ---
+    // --- 4. 聊天与网络 (★ 核心修复：隧道接收) ---
     let socket = null;
     let activeChatId = null;
 
     if(!SERVER_URL.includes('onrender')) alert("Configure SERVER_URL!");
     else {
-        // 强制使用 websocket，避免轮询导致的延迟和断连
         socket = io(SERVER_URL, { 
             reconnection: true, 
             reconnectionAttempts: Infinity,
@@ -177,7 +176,7 @@ document.addEventListener('DOMContentLoaded', () => {
         socket.on('connect', () => {
             document.getElementById('conn-status').className = "status-dot green";
             registerSocket();
-            isSending = false; // 重连后释放锁
+            isSending = false;
         });
 
         socket.on('reconnect', () => { registerSocket(); });
@@ -196,72 +195,76 @@ document.addEventListener('DOMContentLoaded', () => {
                 db.friends.push({ id: fid, addedAt: Date.now(), alias: `User ${fid}` }); renderFriends();
             }
 
-            // --- ★ 核心接收逻辑：懒加载模式 ---
-            
-            // 收到文件块 (无论是否收到过Start，只要有meta信息就创建任务)
-            if (msg.type === 'file_chunk_v2') {
-                // 如果是新任务，立即初始化
-                if (!activeDownloads[msg.fileId]) {
-                    activeDownloads[msg.fileId] = {
-                        chunks: [],
-                        totalSize: msg.totalSize || 0,
-                        receivedSize: 0,
-                        lastBytes: 0, 
-                        lastTime: Date.now(),
-                        fileName: msg.fileName, // ★ 从 Chunk 中直接获取文件名，永不丢失
-                        fileType: msg.fileType
-                    };
-                    if(activeChatId === fid) appendProgressBubble(fid, msg.fileId, msg.fileName, msg.fileType, false);
-                }
+            // --- ★ 隧道解包逻辑 ---
+            // 我们通过 msg.type 判断是不是隧道包
+            if (msg.type === 'tunnel_file_packet') {
+                try {
+                    // ★ 关键：从 content 字段里解压出真实数据
+                    const packet = JSON.parse(msg.content);
+                    
+                    // 1. 处理数据块
+                    if (packet.subType === 'chunk') {
+                        if (!activeDownloads[packet.fileId]) {
+                            activeDownloads[packet.fileId] = {
+                                chunks: [],
+                                totalSize: packet.totalSize || 0,
+                                receivedSize: 0,
+                                lastBytes: 0, 
+                                lastTime: Date.now(),
+                                fileName: packet.fileName,
+                                fileType: packet.fileType
+                            };
+                            if(activeChatId === fid) appendProgressBubble(fid, packet.fileId, packet.fileName, packet.fileType, false);
+                        }
 
-                const download = activeDownloads[msg.fileId];
-                download.chunks.push(msg.chunk); // chunk是base64
-                // 估算大小
-                download.receivedSize += Math.floor(msg.chunk.length * 0.75);
-                
-                // UI 更新
-                const now = Date.now();
-                if(now - download.lastTime > 500) {
-                    const bytesDiff = download.receivedSize - download.lastBytes;
-                    const timeDiff = (now - download.lastTime) / 1000;
-                    const speed = (bytesDiff / 1024) / timeDiff; 
-                    download.lastBytes = download.receivedSize; download.lastTime = now;
-                    updateProgressUI(msg.fileId, download.receivedSize, download.totalSize, speed);
+                        const download = activeDownloads[packet.fileId];
+                        download.chunks.push(packet.data); // data 是 base64
+                        download.receivedSize += Math.floor(packet.data.length * 0.75);
+                        
+                        const now = Date.now();
+                        if(now - download.lastTime > 500) {
+                            const bytesDiff = download.receivedSize - download.lastBytes;
+                            const timeDiff = (now - download.lastTime) / 1000;
+                            const speed = (bytesDiff / 1024) / timeDiff; 
+                            download.lastBytes = download.receivedSize; download.lastTime = now;
+                            updateProgressUI(packet.fileId, download.receivedSize, download.totalSize, speed);
+                        }
+                    } 
+                    // 2. 处理结束信号
+                    else if (packet.subType === 'end') {
+                        const download = activeDownloads[packet.fileId];
+                        if(download) {
+                            const blob = b64toBlob(download.chunks.join(''), download.fileType);
+                            const fileUrl = URL.createObjectURL(blob);
+                            
+                            let finalType = 'file';
+                            if (download.fileType.startsWith('image')) finalType = 'image';
+                            else if (download.fileType.startsWith('video')) finalType = 'video';
+                            else if (download.fileType.startsWith('audio')) finalType = 'voice';
+
+                            const finalMsg = {
+                                type: finalType, content: fileUrl, 
+                                fileName: download.fileName, 
+                                isSelf: false, ts: Date.now()
+                            };
+                            replaceProgressWithContent(packet.fileId, finalMsg);
+                            
+                            if(!db.history[fid]) db.history[fid] = [];
+                            const saveMsg = { ...finalMsg, content: '[File Saved]', type: 'text' };
+                            db.history[fid].push(saveMsg); saveDB();
+                            
+                            delete activeDownloads[packet.fileId];
+                            document.getElementById('success-sound').play().catch(()=>{});
+                        }
+                    }
+                } catch (e) {
+                    console.error("Tunnel Parse Error", e);
                 }
-                return;
+                return; // 隧道包处理完毕，不往下走
             }
 
-            // 收到文件结束
-            if (msg.type === 'file_end_v2') {
-                const download = activeDownloads[msg.fileId];
-                if(download) {
-                    const blob = b64toBlob(download.chunks.join(''), download.fileType);
-                    const fileUrl = URL.createObjectURL(blob);
-                    
-                    let finalType = 'file';
-                    if (download.fileType.startsWith('image')) finalType = 'image';
-                    else if (download.fileType.startsWith('video')) finalType = 'video';
-                    else if (download.fileType.startsWith('audio')) finalType = 'voice';
-
-                    const finalMsg = {
-                        type: finalType, content: fileUrl, 
-                        fileName: download.fileName, 
-                        isSelf: false, ts: Date.now()
-                    };
-                    replaceProgressWithContent(msg.fileId, finalMsg);
-                    
-                    if(!db.history[fid]) db.history[fid] = [];
-                    const saveMsg = { ...finalMsg, content: '[File Saved]', type: 'text' };
-                    db.history[fid].push(saveMsg); saveDB();
-                    
-                    delete activeDownloads[msg.fileId];
-                    document.getElementById('success-sound').play().catch(()=>{});
-                }
-                return;
-            }
-
-            // 普通消息
-            if (!msg.type.startsWith('file_')) {
+            // 普通消息 (非隧道包)
+            if (msg.type !== 'tunnel_file_packet') {
                 if(!db.history[fid]) db.history[fid] = [];
                 db.history[fid].push({ type: msg.type, content: msg.content, isSelf: false, ts: msg.timestamp });
                 saveDB(); renderFriends();
@@ -271,16 +274,15 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    // --- 5. 发送逻辑 (★ 核心修复：冗余传输，不等待握手) ---
+    // --- 5. 发送逻辑 (★ 核心修复：隧道发送) ---
 
     function sendFileChunked(file, overrideType = null) {
         if(!activeChatId || !socket) return;
         if(isSending) { alert("Sending... Please wait."); return; }
         if(!socket.connected) { alert("No Connection"); return; }
 
-        isSending = true; // 上锁
+        isSending = true; 
         const fileId = Date.now() + '-' + Math.random().toString(36).substr(2, 9);
-        // 强制确保文件名存在
         const sendName = (file.name && file.name.length > 0) ? file.name : `file_${Date.now()}`;
         const sendType = overrideType || file.type || 'application/octet-stream';
         const totalSize = file.size;
@@ -291,21 +293,23 @@ document.addEventListener('DOMContentLoaded', () => {
         let lastUpdate = Date.now();
         let lastBytes = 0;
 
-        // ★ 核心 Loop：使用 readAsDataURL 切片读取，每片都带上 Header 信息
         const readNextChunk = () => {
-            // 安全检查：如果连接断开，停止发送
             if(!socket.connected) {
                 isSending = false;
-                alert("Network lost. Upload stopped.");
+                alert("Network lost.");
                 return; 
             }
 
             if (offset >= totalSize) {
-                // 发送完毕
+                // 发送结束包 (打包进 content)
+                const endPacket = {
+                    subType: 'end',
+                    fileId: fileId
+                };
                 socket.emit('send_private', { 
                     targetId: activeChatId, 
-                    type: 'file_end_v2', 
-                    fileId: fileId 
+                    type: 'tunnel_file_packet', // 标记为隧道包
+                    content: JSON.stringify(endPacket) 
                 });
                 
                 let localMsgType = 'file';
@@ -319,11 +323,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 if(!db.history[activeChatId]) db.history[activeChatId] = [];
                 db.history[activeChatId].push({ ...finalMsg, content: '[File Sent]', type: 'text' }); saveDB();
                 
-                isSending = false; // 解锁
+                isSending = false;
                 return;
             }
 
-            // 读取切片
             const chunkBlob = file.slice(offset, offset + CHUNK_SIZE);
             const reader = new FileReader();
             
@@ -331,22 +334,24 @@ document.addEventListener('DOMContentLoaded', () => {
                 const res = e.target.result;
                 const base64Chunk = res.split(',')[1];
                 
-                // ★ 冗余协议：每一块都带上 fileName 和 fileType
-                // 这样接收端就不需要先收到 Start 信号，任何时候收到 Chunk 都能自愈
-                socket.emit('send_private', { 
-                    targetId: activeChatId, 
-                    type: 'file_chunk_v2', 
-                    fileId: fileId, 
-                    chunk: base64Chunk,
-                    // Redundant Meta Data:
+                // ★ 隧道打包：所有数据塞进 content
+                const dataPacket = {
+                    subType: 'chunk',
+                    fileId: fileId,
+                    data: base64Chunk,
                     fileName: sendName,
                     fileType: sendType,
                     totalSize: totalSize
+                };
+
+                socket.emit('send_private', { 
+                    targetId: activeChatId, 
+                    type: 'tunnel_file_packet', // 标记为隧道包
+                    content: JSON.stringify(dataPacket) 
                 });
                 
                 offset += chunkBlob.size;
                 
-                // UI Loop
                 const now = Date.now();
                 if(now - lastUpdate > 200) {
                     const speed = ((offset - lastBytes) / 1024) / ((now - lastUpdate)/1000);
@@ -354,7 +359,6 @@ document.addEventListener('DOMContentLoaded', () => {
                     lastUpdate = now; lastBytes = offset;
                 }
                 
-                // ★ 30ms 间隔，给 Socket 缓冲区留出呼吸时间，防止阻塞
                 setTimeout(readNextChunk, 30);
             };
             
@@ -362,7 +366,6 @@ document.addEventListener('DOMContentLoaded', () => {
             reader.readAsDataURL(chunkBlob);
         };
 
-        // 立即开始，不等待握手
         readNextChunk();
     }
 
