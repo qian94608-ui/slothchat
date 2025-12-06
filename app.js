@@ -3,7 +3,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // ★★★ 请填入你的 Render 地址 ★★★
     const SERVER_URL = 'https://wojak-backend.onrender.com';
 
-    // --- 0. 动态样式 (布局防挤压 + 动画) ---
+    // --- 0. 动态样式 ---
     const styleSheet = document.createElement("style");
     styleSheet.innerText = `
         :root { --glass-bg: rgba(255, 255, 255, 0.95); --primary: #59BC10; --primary-dark: #46960C; --danger: #FF3B30; --shadow-sm: 0 2px 8px rgba(0,0,0,0.08); }
@@ -14,29 +14,32 @@ document.addEventListener('DOMContentLoaded', () => {
         /* 列表项 */
         .k-list-item { background: #fff; border-radius: 14px; padding: 14px; margin-bottom: 10px; box-shadow: var(--shadow-sm); transition: transform 0.1s; position: relative; }
         .k-list-item:active { transform: scale(0.98); background: #f2f2f2; }
-        .list-edit-btn { padding: 8px; color: #999; font-size: 16px; cursor: pointer; z-index: 10; }
+        .list-edit-btn { padding: 8px; color: #999; font-size: 16px; cursor: pointer; z-index: 10; margin-left: auto; }
 
-        /* 底部输入栏 (防挤压修复) */
+        /* 底部输入栏 (防挤压 + 状态管理) */
         .chat-footer { display: flex; align-items: center; gap: 8px; padding: 10px; background: #fff; box-shadow: 0 -2px 10px rgba(0,0,0,0.05); }
-        .footer-tool { flex: 0 0 40px; width: 40px; height: 40px; border-radius: 50%; border: none; background: #f0f0f0; font-size: 20px; display: flex; justify-content: center; align-items: center; }
+        .footer-tool { flex: 0 0 40px; width: 40px; height: 40px; border-radius: 50%; border: none; background: #f0f0f0; font-size: 20px; display: flex; justify-content: center; align-items: center; cursor: pointer; }
+        .input-zone { flex: 1; display: flex; align-items: center; min-width: 0; position: relative; height: 40px; }
         
-        /* 输入区域核心修复 */
-        .input-zone { flex: 1; display: flex; align-items: center; min-width: 0; /* 关键：防止溢出 */ }
+        /* 文本模式 (默认显示) */
+        .text-wrapper { display: flex; align-items: center; width: 100%; gap: 8px; position: absolute; left: 0; top: 0; height: 100%; transition: opacity 0.2s; }
+        #chat-input { flex: 1; height: 40px; border-radius: 20px; border: 1px solid #ddd; padding: 0 15px; outline: none; background: #f9f9f9; min-width: 0; font-size: 16px; }
+        .send-arrow { flex: 0 0 40px; width: 40px; height: 40px; border-radius: 50%; background: var(--primary); color: #fff; border: none; font-weight: bold; cursor: pointer; }
         
-        /* 文本模式 */
-        .text-wrapper { display: flex; align-items: center; width: 100%; gap: 8px; }
-        .text-wrapper.hidden { display: none !important; }
-        #chat-input { flex: 1; height: 40px; border-radius: 20px; border: 1px solid #ddd; padding: 0 15px; outline: none; background: #f9f9f9; min-width: 0; }
-        .send-arrow { flex: 0 0 40px; width: 40px; height: 40px; border-radius: 50%; background: var(--primary); color: #fff; border: none; font-weight: bold; }
-        
-        /* 语音模式 */
-        .voice-btn-long { display: none; width: 100%; height: 40px; border-radius: 20px; background: #f0f0f0; border: 1px solid #ddd; font-weight: bold; color: #555; }
+        /* 语音模式 (默认隐藏) */
+        .voice-btn-long { 
+            display: none; /* 关键：初始隐藏 */
+            width: 100%; height: 40px; border-radius: 20px; background: #FF4444; 
+            border: none; font-weight: 800; color: #fff; font-size: 14px; letter-spacing: 1px;
+            box-shadow: 0 4px 10px rgba(255, 68, 68, 0.3);
+        }
+        /* 激活状态类 */
         .voice-btn-long.active { display: block !important; }
-        .voice-btn-long.recording { background: var(--danger); color: #fff; border-color: var(--danger); animation: pulse-red 1s infinite; }
-        @keyframes pulse-red { 0% {box-shadow: 0 0 0 0 rgba(255, 59, 48, 0.4);} 70% {box-shadow: 0 0 0 10px rgba(255, 59, 48, 0);} 100% {box-shadow: 0 0 0 0 rgba(255, 59, 48, 0);} }
+        .voice-btn-long.recording { background: #cc0000; animation: pulse-red 1s infinite; }
+        @keyframes pulse-red { 0% {transform: scale(1);} 50% {transform: scale(1.02);} 100% {transform: scale(1);} }
 
-        /* 模式切换按钮 (固定不被挤走) */
-        #mode-switch-btn { flex: 0 0 40px; } 
+        /* 隐藏类辅助 */
+        .hidden { display: none !important; opacity: 0; pointer-events: none; }
 
         /* 拨号盘 */
         .numpad-container { display: flex; flex-direction: column; align-items: center; padding: 10px; }
@@ -76,7 +79,6 @@ document.addEventListener('DOMContentLoaded', () => {
         .drag-overlay { display: none; z-index: 99999; }
         .drag-overlay.active { display: flex; }
         
-        /* P2P 状态标 */
         .lan-badge { background: #E8F5E9; color: #2E7D32; padding: 2px 6px; border-radius: 4px; font-size: 10px; font-weight: bold; border: 1px solid #A5D6A7; display: none; margin-left: 5px; }
         .lan-badge.active { display: inline-block; }
     `;
@@ -91,7 +93,7 @@ document.addEventListener('DOMContentLoaded', () => {
     document.body.insertAdjacentHTML('beforeend', previewModalHTML);
 
     // --- 1. 数据 ---
-    const DB_KEY = 'pepe_v43_android_fix';
+    const DB_KEY = 'pepe_v44_multi_file';
     const CHUNK_SIZE = 12 * 1024;
     let db;
     
@@ -125,17 +127,15 @@ document.addEventListener('DOMContentLoaded', () => {
         db.friends.forEach(f => {
             const div = document.createElement('div');
             div.className = `k-list-item ${f.unread ? 'shake-active' : ''}`;
-            let nameHtml = `
-                <div style="display:flex; align-items:center; justify-content:space-between;">
-                    <div style="font-weight:bold; font-size:16px;">${f.alias || f.id}</div>
-                    <div class="list-edit-btn" onclick="event.stopPropagation(); window.editContactAlias('${f.id}')">✎</div>
-                </div>`;
+            
+            let nameHtml = `<div style="font-weight:bold; font-size:16px;">${f.alias || f.id}</div>`;
             if(f.unread) nameHtml = `<div style="display:flex;align-items:center;gap:6px;"><div style="font-weight:bold;">${f.alias||f.id}</div><div class="marquee-box"><div class="marquee-text">📢 MESSAGE COMING...</div></div></div>`;
             
             div.innerHTML = `
                 <div style="display:flex; align-items:center; gap:12px;">
                     <img src="https://api.dicebear.com/7.x/notionists/svg?seed=${f.id}" style="width:45px; height:45px; border-radius:50%; background:#eee;">
                     <div style="flex:1;">${nameHtml}<div style="font-size:12px; color:#888;">${f.unread ? '<span style="color:red">● New Message</span>' : 'Tap to chat'}</div></div>
+                    <div class="list-edit-btn" onclick="event.stopPropagation(); window.editContactAlias('${f.id}')">✎</div>
                 </div>`;
             div.onclick = () => { f.unread = false; saveDB(); renderFriends(); openChat(f.id); };
             list.appendChild(div);
@@ -190,16 +190,19 @@ document.addEventListener('DOMContentLoaded', () => {
         activeChatId = id; 
         const f = db.friends.find(x => x.id === id);
         
-        // 头部渲染 (带 P2P 标记)
-        document.getElementById('chat-partner-name').innerHTML = `${f.alias || f.id} <span class="edit-pen" onclick="event.stopPropagation(); window.editFriendName()">✎</span> <span id="lan-badge" class="lan-badge">⚡ LAN</span>`;
+        document.getElementById('chat-partner-name').innerHTML = `${f.alias || f.id} <span class="edit-pen" onclick="event.stopPropagation(); window.editContactAlias('${id}')">✎</span> <span id="lan-badge" class="lan-badge">⚡ LAN</span>`;
         document.getElementById('chat-online-dot').className = "status-dot red";
+        
+        // ★ 核心修复：强制重置底部栏状态 ★
+        document.getElementById('text-input-wrapper').classList.remove('hidden');
+        document.getElementById('voice-record-btn').classList.remove('active'); // 隐藏语音
+        document.getElementById('mode-switch-btn').innerText = '🎤'; // 重置图标
         
         const chatView = document.getElementById('view-chat');
         chatView.classList.remove('right-sheet');
         chatView.classList.add('active');
         
-        // ★ 核心修复：History API 拦截返回手势 ★
-        // 先推入状态，这样按下物理返回键时，浏览器会触发 popstate 而不是关闭页面
+        // 压入历史，拦截返回
         window.history.pushState({ page: 'chat' }, "", "#chat");
 
         const container = document.getElementById('messages-container'); 
@@ -267,7 +270,7 @@ document.addEventListener('DOMContentLoaded', () => {
     renderProfile();
     setupDialpad();
 
-    // --- 4. 网络 (P2P + Tunnel) ---
+    // --- 4. 网络 ---
     if(!SERVER_URL.includes('onrender')) alert("Configure SERVER_URL!");
     else {
         socket = io(SERVER_URL, { reconnection: true, transports: ['websocket'], upgrade: false });
@@ -276,7 +279,6 @@ document.addEventListener('DOMContentLoaded', () => {
         socket.on('disconnect', () => { document.getElementById('conn-status').className = "status-dot red"; isSending = false; });
         document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') { if (socket.disconnected) socket.connect(); else registerSocket(); } });
 
-        // P2P Signal
         socket.on('p2p_signal', async (data) => {
             if (!peerConnection && data.type === 'offer') { initP2P(data.from, false); }
             if (!peerConnection) return;
@@ -326,7 +328,6 @@ document.addEventListener('DOMContentLoaded', () => {
     const initP2P = async (targetId, isInitiator) => {
         if(peerConnection) peerConnection.close();
         isP2PReady = false;
-        // 使用 Google STUN 穿透
         const config = { iceServers: [{ urls: "stun:stun.l.google.com:19302" }] }; 
         peerConnection = new RTCPeerConnection(config);
         
@@ -337,7 +338,7 @@ document.addEventListener('DOMContentLoaded', () => {
         peerConnection.onconnectionstatechange = () => {
             if (peerConnection.connectionState === 'connected') {
                 document.getElementById('chat-online-dot').className = "status-dot green";
-                document.getElementById('lan-badge').classList.add('active'); // ★ 局域网图标显示 ★
+                document.getElementById('lan-badge').classList.add('active');
                 isP2PReady = true;
             } else {
                 document.getElementById('lan-badge').classList.remove('active');
@@ -365,7 +366,7 @@ document.addEventListener('DOMContentLoaded', () => {
     };
 
     function handleTunnelPacket(p, fid) {
-        if(p.type && !p.subType) { // P2P 普通消息
+        if(p.type && !p.subType) { // P2P Msg
             if(!db.history[fid]) db.history[fid] = [];
             db.history[fid].push({ type: p.type, content: p.content, isSelf: false, ts: Date.now() });
             saveDB();
@@ -407,14 +408,12 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    // --- 发送逻辑 ---
+    // --- 队列发送 (文件夹支持) ---
     function addToQueue(file) { uploadQueue.push(file); processQueue(); }
     function processQueue() { if(isSending || uploadQueue.length === 0) return; const file = uploadQueue.shift(); sendFileChunked(file); }
 
     function sendFileChunked(file) {
         if(!activeChatId) { alert("Connect first"); return; }
-        
-        // P2P 优先
         const useP2P = isP2PReady && dataChannel && dataChannel.readyState === 'open';
         if(!useP2P && (!socket || !socket.connected)) { alert("No Connection"); return; }
         
@@ -427,7 +426,6 @@ document.addEventListener('DOMContentLoaded', () => {
         appendProgressBubble(activeChatId, fileId, sendName, true);
         
         let offset = 0; let lastTime = Date.now(); let lastBytes = 0; const total = file.size;
-        
         const readNext = () => {
             if(cancelFlag[fileId]) { isSending = false; setTimeout(processQueue, 500); return; }
             if(!useP2P && !socket.connected) { isSending = false; setTimeout(processQueue, 500); return; }
@@ -453,12 +451,8 @@ document.addEventListener('DOMContentLoaded', () => {
             r.onload = e => {
                 const b64 = e.target.result.split(',')[1];
                 const packet = JSON.stringify({ subType: 'chunk', fileId, data: b64, fileName: sendName, fileType: sendType, totalSize: total });
-                
-                if(useP2P) {
-                    try { dataChannel.send(packet); } catch(e) { isSending=false; return; }
-                } else {
-                    socket.emit('send_private', { targetId: activeChatId, type: 'tunnel_file_packet', content: packet });
-                }
+                if(useP2P) { try { dataChannel.send(packet); } catch(e) { isSending=false; return; } } 
+                else { socket.emit('send_private', { targetId: activeChatId, type: 'tunnel_file_packet', content: packet }); }
                 
                 offset += chunk.size;
                 const now = Date.now();
@@ -484,6 +478,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
+    // --- UI Helpers ---
     function b64toBlob(b64, type) {
         try {
             const bin = atob(b64); const arr = new Uint8Array(bin.length);
@@ -521,7 +516,6 @@ document.addEventListener('DOMContentLoaded', () => {
         if(row) { row.remove(); appendMsgDOM(msg, msg.isSelf); }
     }
 
-    // --- Helpers & Binds ---
     window.handleAudio = (action, url) => {
         if (!globalAudio) globalAudio = new Audio();
         if (action === 'play') {
@@ -531,13 +525,12 @@ document.addEventListener('DOMContentLoaded', () => {
         else if (action === 'stop') { globalAudio.pause(); globalAudio.currentTime = 0; }
     };
 
-    // ★ 修复：安卓权限预热 ★
-    const reqPerms = async () => { try { await navigator.mediaDevices.getUserMedia({audio:true}); } catch(e){} };
-    document.body.addEventListener('click', reqPerms, {once:true}); // 任意点击预热权限
-
-    // 录音按钮
+    // 录音
     const vBtn = document.getElementById('voice-record-btn');
     let rec, chunks;
+    const reqPerms = async () => { try { await navigator.mediaDevices.getUserMedia({audio:true}); } catch(e){} };
+    document.body.addEventListener('click', reqPerms, {once:true});
+
     const startR = async(e) => {
         e.preventDefault();
         try {
@@ -568,23 +561,17 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('chat-send-btn').onclick = handleSend;
     document.getElementById('chat-input').addEventListener('keypress', (e) => { if(e.key === 'Enter') handleSend(); });
 
-    // ★ 修复：返回键与 History API 结合 ★
-    window.goBack = () => { 
-        if(activeChatId) window.history.back(); // 触发 popstate
-    };
-    
-    // 监听返回手势/按钮
+    // ★ 修复：返回逻辑 (History API) ★
+    window.goBack = () => { if (activeChatId) window.history.back(); };
     window.addEventListener('popstate', () => {
         const preview = document.getElementById('media-preview-modal');
         if(!preview.classList.contains('hidden')) { window.closePreview(); return; }
         
-        // 执行关闭聊天
         document.getElementById('view-chat').classList.remove('active');
         setTimeout(() => document.getElementById('view-chat').classList.add('right-sheet'), 300);
         
         activeChatId = null; 
         if(peerConnection) { peerConnection.close(); peerConnection=null; isP2PReady=false; }
-        
         renderFriends();
     });
 
@@ -605,6 +592,7 @@ document.addEventListener('DOMContentLoaded', () => {
         } else if(e.dataTransfer.files[0]) addToQueue(e.dataTransfer.files[0]);
     });
 
+    // 绑定
     document.getElementById('add-id-btn').onclick = () => { document.getElementById('add-overlay').classList.remove('hidden'); dialInput=""; document.getElementById('dial-display').innerText="____"; };
     document.getElementById('scan-btn').onclick = () => {
         document.getElementById('qr-overlay').classList.remove('hidden');
@@ -624,8 +612,15 @@ document.addEventListener('DOMContentLoaded', () => {
         else { t.classList.add('hidden'); t.style.display='none'; v.classList.remove('hidden'); v.style.display='block'; b.innerText='⌨️'; }
     };
 
-    document.getElementById('file-btn').onclick = () => document.getElementById('chat-file-input').click();
-    document.getElementById('chat-file-input').onchange = e => { if(e.target.files[0]) addToQueue(e.target.files[0]); };
+    // ★ 修复：文件输入多选支持 ★
+    const fileInput = document.getElementById('chat-file-input');
+    fileInput.setAttribute('multiple', ''); // Allow multiple files
+    document.getElementById('file-btn').onclick = () => fileInput.click();
+    fileInput.onchange = e => { 
+        if(e.target.files.length > 0) {
+            Array.from(e.target.files).forEach(file => addToQueue(file));
+        }
+    };
     
     const sGrid = document.getElementById('sticker-grid');
     sGrid.innerHTML = '';
@@ -652,16 +647,7 @@ document.addEventListener('DOMContentLoaded', () => {
         window.history.pushState({p:1},"");
     };
     window.closePreview = () => { document.getElementById('media-preview-modal').classList.add('hidden'); document.getElementById('media-preview-modal').style.display='none'; };
-    window.playVoice = (url, id) => { const a = new Audio(url); a.play(); const b = document.getElementById(id); if(b) { b.classList.add('playing'); a.onended=()=>b.classList.remove('playing'); } };
     
-    window.editFriendName = () => { 
-        if(activeChatId) { 
-            const f=db.friends.find(x=>x.id===activeChatId); const n=prompt("Set Alias:", f.alias||f.id); 
-            if(n){ f.alias=n; saveDB(); document.getElementById('chat-partner-name').innerText=n; renderFriends(); } 
-        } 
-    };
-    document.querySelector('.chat-user-info').onclick = window.editFriendName;
-
     renderFriends(); 
     document.body.addEventListener('click', () => { document.getElementById('msg-sound').load(); }, {once:true});
 });
