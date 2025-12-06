@@ -10,6 +10,8 @@ document.addEventListener('DOMContentLoaded', () => {
         body { background: #F2F2F7; font-family: -apple-system, sans-serif; -webkit-tap-highlight-color: transparent; }
         .defi-nav { display: none !important; }
         .scroll-content { padding-bottom: 30px !important; }
+        
+        /* 列表项 */
         .k-list-item { background: #fff; border-radius: 14px; padding: 14px; margin-bottom: 10px; box-shadow: var(--shadow-sm); transition: transform 0.1s; position: relative; }
         .k-list-item:active { transform: scale(0.98); background: #f2f2f2; }
         .list-edit-btn { padding: 8px; color: #999; font-size: 16px; cursor: pointer; z-index: 10; margin-left: auto; }
@@ -32,16 +34,24 @@ document.addEventListener('DOMContentLoaded', () => {
         .thumb-box { position: relative; display: inline-block; max-width: 200px; border-radius: 12px; overflow: hidden; background: #000; }
         .thumb-img { max-width: 100%; height: auto; display: block; object-fit: contain; }
         video.thumb-img { object-fit: cover; max-height: 200px; }
+        .sticker-img { width: 80px !important; height: 80px !important; object-fit: contain !important; }
         
-        /* ★ 动图表情 ★ */
-        .sticker-img { width: 100px !important; height: 100px !important; object-fit: contain !important; display: block; }
-        
-        /* ★ Office 文档卡片 ★ */
-        .doc-card { display: flex; align-items: center; gap: 10px; background: #f9f9f9; padding: 10px; border-radius: 8px; color: #333; text-decoration: none; }
-        .doc-icon { font-size: 24px; }
-        .doc-info { display: flex; flex-direction: column; }
-        .doc-name { font-weight: bold; font-size: 12px; max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-        .doc-type { font-size: 10px; color: #666; text-transform: uppercase; }
+        /* ★ Office 文档卡片修复 ★ */
+        .doc-card { 
+            display: flex; align-items: center; gap: 12px; 
+            background: rgba(255,255,255,0.95); /* 确保背景不透明 */
+            padding: 12px; border-radius: 10px; color: #333; text-decoration: none; 
+            width: 100%; box-sizing: border-box; /* 撑满气泡 */
+        }
+        .msg-row.self .doc-card { color: #000; /* 发送方气泡内文字颜色适配 */ }
+        .doc-icon { font-size: 28px; flex-shrink: 0; }
+        .doc-info { display: flex; flex-direction: column; overflow: hidden; flex: 1; min-width: 0; }
+        .doc-name { 
+            font-weight: bold; font-size: 13px; 
+            white-space: nowrap; overflow: hidden; text-overflow: ellipsis; /* 防止溢出 */
+            display: block;
+        }
+        .doc-type { font-size: 10px; color: #666; margin-top: 2px; text-transform: uppercase; }
 
         .voice-bubble { display: flex; align-items: center; gap: 8px; min-width: 100px; }
         .wave-visual { display: flex; align-items: center; gap: 3px; height: 16px; }
@@ -58,10 +68,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
         .edit-pen { margin-left: 8px; cursor: pointer; font-size: 14px; opacity: 0.7; }
         .cancel-btn { position: absolute; top:5px; right:5px; background:rgba(0,0,0,0.6); color:#fff; width:22px; height:22px; border-radius:50%; text-align:center; line-height:22px; font-size:12px; cursor:pointer; z-index:10; }
+        
         .modal-overlay { z-index: 100000 !important; background: rgba(0,0,0,0.6) !important; backdrop-filter: blur(5px); }
         .modal-header { background: var(--primary) !important; color: #fff; border:none; }
         .close-x { color: #fff !important; background: rgba(0,0,0,0.2) !important; }
         .modal-box { border-radius: 20px; overflow: hidden; border: none; }
+        
         .drag-overlay { display: none; z-index: 99999; }
         .drag-overlay.active { display: flex; }
         
@@ -78,8 +90,8 @@ document.addEventListener('DOMContentLoaded', () => {
     </div>`;
     document.body.insertAdjacentHTML('beforeend', previewModalHTML);
 
-    // --- 1. 数据与全局 ---
-    const DB_KEY = 'pepe_v45_final_omega';
+    // --- 1. 数据 ---
+    const DB_KEY = 'pepe_v46_final_fixes';
     const CHUNK_SIZE = 12 * 1024;
     let db;
     
@@ -149,17 +161,16 @@ document.addEventListener('DOMContentLoaded', () => {
         else if(msg.type==='image') html=`<div class="bubble" style="padding:4px; background:transparent; box-shadow:none;"><div class="thumb-box" onclick="previewMedia('${msg.content}','image')"><img src="${msg.content}" class="thumb-img"></div></div>`;
         else if(msg.type==='video') html=`<div class="bubble" style="padding:4px; background:transparent; box-shadow:none;"><div class="thumb-box" onclick="previewMedia('${msg.content}','video')"><video src="${msg.content}#t=0.1" class="thumb-img" preload="metadata" muted></video><div style="position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); color:#fff; font-size:30px;">▶</div></div></div>`;
         else if(msg.type==='file') {
-            // ★ 文档预览逻辑 ★
+            // ★ 修复：文档卡片样式 ★
             const lowerName = msg.fileName.toLowerCase();
             let icon = '📂';
-            let isDoc = false;
-            if(lowerName.match(/\.(doc|docx)$/)) { icon = '📝'; isDoc = true; }
-            else if(lowerName.match(/\.(xls|xlsx)$/)) { icon = '📊'; isDoc = true; }
-            else if(lowerName.match(/\.(ppt|pptx)$/)) { icon = '📉'; isDoc = true; }
+            if(lowerName.match(/\.(doc|docx)$/)) icon = '📝';
+            else if(lowerName.match(/\.(xls|xlsx)$/)) icon = '📊';
+            else if(lowerName.match(/\.(ppt|pptx)$/)) icon = '📉';
+            else if(lowerName.match(/\.pdf$/)) icon = '📕';
 
-            // 如果是文档且在公网(理论上)，尝试Google预览；但因为是Blob，只能显示漂亮的卡片
             html = `
-                <div class="bubble" style="padding:5px;">
+                <div class="bubble" style="padding:5px; width: 220px;">
                     <a class="doc-card" href="${msg.content}" download="${msg.fileName}">
                         <div class="doc-icon">${icon}</div>
                         <div class="doc-info">
@@ -173,11 +184,8 @@ document.addEventListener('DOMContentLoaded', () => {
         div.innerHTML = html; box.appendChild(div); box.scrollTop = box.scrollHeight;
     };
 
-    // 发送数据
     const sendData = (type, content) => {
         if(!activeChatId) { alert("Open chat first!"); return; }
-        
-        // P2P 优先
         if (isP2PReady && dataChannel && dataChannel.readyState === 'open') {
             try {
                 dataChannel.send(JSON.stringify({ type, content })); 
@@ -187,34 +195,28 @@ document.addEventListener('DOMContentLoaded', () => {
                 return;
             } catch(e) {}
         }
-
-        if(socket && socket.connected) {
-            socket.emit('send_private', { targetId: activeChatId, content, type });
-        } else {
-            alert("Connecting..."); return;
-        }
+        if(socket && socket.connected) socket.emit('send_private', { targetId: activeChatId, content, type });
+        else { alert("Connecting..."); return; }
         const msgObj = { type, content, isSelf: true, ts: Date.now() };
         if(!db.history[activeChatId]) db.history[activeChatId] = [];
         db.history[activeChatId].push(msgObj); saveDB(); appendMsgDOM(msgObj, true);
     };
 
-    // ★ 修复：完全强制返回 (不依赖 History) ★
-    window.goBack = () => { 
-        // 1. UI 强制切换
+    // ★ 修复：纯 UI 返回逻辑 (解决手势与按钮冲突) ★
+    const closeChatUI = () => {
         const chatView = document.getElementById('view-chat');
         chatView.classList.remove('active');
-        setTimeout(() => chatView.classList.add('right-sheet'), 50);
-        
-        // 2. 状态清理
+        setTimeout(() => chatView.classList.add('right-sheet'), 300);
         activeChatId = null;
-        if('speechSynthesis' in window) window.speechSynthesis.cancel();
-        
-        // 3. 刷新列表
+        if(peerConnection) { peerConnection.close(); peerConnection = null; isP2PReady = false; }
         renderFriends();
-        
-        // 4. 如果浏览器有历史记录，回退一次以保持同步
-        if(window.history.state && window.history.state.chatOpen) {
-            window.history.back();
+    };
+
+    window.goBack = () => { 
+        if (window.history.state && window.history.state.chatOpen) {
+            window.history.back(); // 触发 popstate
+        } else {
+            closeChatUI(); // 兜底：直接关闭
         }
     };
 
@@ -230,7 +232,7 @@ document.addEventListener('DOMContentLoaded', () => {
         chatView.classList.remove('right-sheet');
         chatView.classList.add('active');
         
-        // Push history for Android back button
+        // Push State for Android Back Button
         window.history.pushState({ chatOpen: true, id: id }, "");
 
         const container = document.getElementById('messages-container'); 
@@ -298,7 +300,7 @@ document.addEventListener('DOMContentLoaded', () => {
     renderProfile();
     setupDialpad();
 
-    // --- 4. 网络层 (后台接收支持) ---
+    // --- 4. 网络 ---
     if(!SERVER_URL.includes('onrender')) alert("Configure SERVER_URL!");
     else {
         socket = io(SERVER_URL, { reconnection: true, transports: ['websocket'], upgrade: false });
@@ -333,7 +335,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 document.getElementById('chat-online-dot').className = "status-dot green";
             } else {
                 friend.unread = true; saveDB(); renderFriends();
-                // 提示音
                 if('speechSynthesis' in window && !window.speechSynthesis.speaking) {
                     const u = new SpeechSynthesisUtterance("Message coming");
                     window.speechSynthesis.speak(u);
@@ -353,14 +354,12 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
+    // P2P
     const initP2P = async (targetId, isInitiator) => {
         if(peerConnection) peerConnection.close();
         isP2PReady = false;
-        // P2P 策略：优先 host (内网)
-        const config = { 
-            iceServers: [{ urls: "stun:stun.l.google.com:19302" }],
-            iceTransportPolicy: 'all' 
-        }; 
+        // P2P 策略：开放所有传输方式
+        const config = { iceServers: [{ urls: "stun:stun.l.google.com:19302" }], iceTransportPolicy: 'all' }; 
         peerConnection = new RTCPeerConnection(config);
         
         peerConnection.onicecandidate = (event) => {
@@ -385,26 +384,15 @@ document.addEventListener('DOMContentLoaded', () => {
             await peerConnection.setLocalDescription(offer);
             socket.emit('p2p_signal', { targetId, type: 'offer', offer });
         } else {
-            peerConnection.ondatachannel = (event) => {
-                dataChannel = event.channel;
-                setupDataChannel(dataChannel);
-            };
+            peerConnection.ondatachannel = (event) => { dataChannel = event.channel; setupDataChannel(dataChannel); };
         }
     };
 
     const setupDataChannel = (dc) => {
         dc.onopen = () => { isP2PReady = true; document.getElementById('lan-badge').classList.add('active'); };
-        dc.onmessage = (e) => { 
-            try { 
-                const msg = JSON.parse(e.data); 
-                // P2P 消息也需要 fid (对方ID)，这里我们假设 connection 是一对一，activeChatId 即对方
-                // 但为了严谨，我们应该在 payload 里带上 from
-                handleTunnelPacket(msg, activeChatId); 
-            } catch(e) {} 
-        };
+        dc.onmessage = (e) => { try { const msg = JSON.parse(e.data); handleTunnelPacket(msg, activeChatId); } catch(e) {} };
     };
 
-    // ★ 修复：后台接收文件 (fid 参数化) ★
     function handleTunnelPacket(p, fid) {
         if(p.type && !p.subType) { // P2P Msg
             if(!db.history[fid]) db.history[fid] = [];
@@ -440,21 +428,15 @@ document.addEventListener('DOMContentLoaded', () => {
                 else if(dl.fileType.startsWith('audio')) type = 'voice';
                 
                 const finalMsg = { type, content: url, fileName: dl.fileName, isSelf: false, ts: Date.now() };
-                
                 if(activeChatId === fid) replaceProgressWithContent(p.fileId, finalMsg);
-                
                 if(!db.history[fid]) db.history[fid] = [];
-                // ★ 关键：保存的是 Blob URL，确保后台接收后点开能看 ★
-                db.history[fid].push(finalMsg); 
-                saveDB();
-                
+                db.history[fid].push(finalMsg); saveDB();
                 delete activeDownloads[p.fileId];
                 document.getElementById('success-sound').play().catch(()=>{});
             }
         }
     }
 
-    // --- 队列发送 ---
     function addToQueue(file) { uploadQueue.push(file); processQueue(); }
     function processQueue() { if(isSending || uploadQueue.length === 0) return; const file = uploadQueue.shift(); sendFileChunked(file); }
 
@@ -570,7 +552,6 @@ document.addEventListener('DOMContentLoaded', () => {
         else if (action === 'stop') { globalAudio.pause(); globalAudio.currentTime = 0; }
     };
 
-    // 录音
     const vBtn = document.getElementById('voice-record-btn');
     let rec, chunks;
     const reqPerms = async () => { try { await navigator.mediaDevices.getUserMedia({audio:true}); } catch(e){} };
@@ -598,7 +579,6 @@ document.addEventListener('DOMContentLoaded', () => {
     vBtn.addEventListener('mousedown', startR); vBtn.addEventListener('mouseup', stopR);
     vBtn.addEventListener('touchstart', startR); vBtn.addEventListener('touchend', stopR);
 
-    // 文本发送
     const handleSend = () => {
         const t = document.getElementById('chat-input');
         if(t.value.trim()) { sendData('text', t.value); t.value=''; }
@@ -606,19 +586,16 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('chat-send-btn').onclick = handleSend;
     document.getElementById('chat-input').addEventListener('keypress', (e) => { if(e.key === 'Enter') handleSend(); });
 
-    // ★ 修复：监听安卓返回按键 (PopState) ★
+    // ★ 监听返回手势 (Core Fix) ★
     window.addEventListener('popstate', () => {
         const preview = document.getElementById('media-preview-modal');
         if(!preview.classList.contains('hidden')) { window.closePreview(); return; }
         
-        // 只要有聊天开着，就关闭聊天
-        const chatView = document.getElementById('view-chat');
-        if (chatView.classList.contains('active')) {
-            window.goBack();
+        if (document.getElementById('view-chat').classList.contains('active')) {
+            closeChatUI();
         }
     });
 
-    // 拖拽
     const drag = document.getElementById('drag-overlay');
     window.addEventListener('dragenter', () => { if(activeChatId) drag.classList.remove('hidden'); });
     drag.addEventListener('dragleave', (e) => { if(e.target===drag) drag.classList.add('hidden'); });
@@ -654,27 +631,17 @@ document.addEventListener('DOMContentLoaded', () => {
         else { t.classList.add('hidden'); t.style.display='none'; v.classList.remove('hidden'); v.style.display='block'; b.innerText='⌨️'; }
     };
 
-    document.getElementById('file-btn').onclick = () => document.getElementById('chat-file-input').click();
-    document.getElementById('chat-file-input').onchange = e => { if(e.target.files[0]) addToQueue(e.target.files[0]); };
+    // ★ 修复：文件多选支持 ★
+    const fileInput = document.getElementById('chat-file-input');
+    fileInput.setAttribute('multiple', ''); 
+    document.getElementById('file-btn').onclick = () => fileInput.click();
+    fileInput.onchange = e => { 
+        if(e.target.files.length > 0) Array.from(e.target.files).forEach(file => addToQueue(file));
+    };
     
-    // ★ 动图表情源 ★
     const sGrid = document.getElementById('sticker-grid');
     sGrid.innerHTML = '';
-    // 使用 Giphy 热门动图占位 (避免跨域，用 Dicebear 代替，但逻辑支持 GIF)
-    const gifs = [
-        "https://media.tenor.com/2nZ2_2s_2zAAAAAi/pepe-frog.gif",
-        "https://media.tenor.com/Xk_Xk_XkAAAAi/pepe-dance.gif",
-        "https://media.tenor.com/8x_8x_8xAAAAi/pepe-sad.gif",
-        "https://media.tenor.com/9y_9y_9yAAAAi/pepe-happy.gif",
-        "https://api.dicebear.com/7.x/fun-emoji/svg?seed=1",
-        "https://api.dicebear.com/7.x/fun-emoji/svg?seed=2",
-        "https://api.dicebear.com/7.x/fun-emoji/svg?seed=3",
-        "https://api.dicebear.com/7.x/fun-emoji/svg?seed=4",
-        "https://api.dicebear.com/7.x/fun-emoji/svg?seed=5",
-        "https://api.dicebear.com/7.x/fun-emoji/svg?seed=6",
-        "https://api.dicebear.com/7.x/fun-emoji/svg?seed=7",
-        "https://api.dicebear.com/7.x/fun-emoji/svg?seed=8"
-    ];
+    const gifs = [ "https://media.tenor.com/2nZ2_2s_2zAAAAAi/pepe-frog.gif", "https://media.tenor.com/Xk_Xk_XkAAAAi/pepe-dance.gif", "https://media.tenor.com/8x_8x_8xAAAAi/pepe-sad.gif", "https://media.tenor.com/9y_9y_9yAAAAi/pepe-happy.gif" ];
     gifs.forEach(src => {
         const img = document.createElement('img');
         img.src = src;
