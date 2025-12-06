@@ -3,29 +3,47 @@ document.addEventListener('DOMContentLoaded', () => {
     // ★★★ 请填入你的 Render 地址 ★★★
     const SERVER_URL = 'https://wojak-backend.onrender.com';
 
-    // --- 0. 动态注入样式与预览模态框 ---
-    
-    // 注入 CSS (解决语音波纹、图片尺寸、样式问题)
+    // --- 0. 动态注入样式 (修复：缩略图尺寸、语音波纹、表情) ---
     const styleSheet = document.createElement("style");
     styleSheet.innerText = `
         /* 语音播放动画 */
-        @keyframes wave-anim {
-            0% { transform: scaleY(1); opacity: 1; }
-            50% { transform: scaleY(1.5); opacity: 0.7; }
-            100% { transform: scaleY(1); opacity: 1; }
+        @keyframes wave {
+            0% { transform: scaleY(1); }
+            50% { transform: scaleY(2.5); background: #fff; }
+            100% { transform: scaleY(1); }
         }
-        .voice-playing .wave-bar { animation: wave-anim 0.5s infinite ease-in-out; background-color: #59BC10 !important; }
-        .wave-visual { display: flex; align-items: center; gap: 2px; height: 15px; margin-left: 8px; }
-        .wave-bar { width: 3px; height: 100%; background-color: #333; border-radius: 2px; }
-        .wave-bar:nth-child(2) { height: 60%; }
-        .wave-bar:nth-child(3) { height: 80%; }
+        @keyframes wave-green {
+            0% { transform: scaleY(1); }
+            50% { transform: scaleY(2.5); background: #59BC10; }
+            100% { transform: scaleY(1); }
+        }
         
-        /* 图片预览缩略图限制 (缩小50%) */
-        .thumb-img { max-width: 80px; max-height: 80px; object-fit: cover; border-radius: 6px; display: block; }
-        .bubble { position: relative; max-width: 80%; }
+        .voice-bubble { transition: all 0.2s; }
+        .wave-visual { display: flex; align-items: center; gap: 3px; height: 12px; margin-left: 10px; }
+        .wave-bar { width: 3px; height: 100%; background-color: #555; border-radius: 2px; transform-origin: bottom; }
+        
+        /* 己方播放动画 */
+        .voice-bubble.self.playing .wave-bar { animation: wave 0.6s infinite ease-in-out; background-color: #fff !important; }
+        /* 对方播放动画 */
+        .voice-bubble.other.playing .wave-bar { animation: wave-green 0.6s infinite ease-in-out; background-color: #59BC10 !important; }
+        
+        .voice-bubble.playing .wave-bar:nth-child(1) { animation-delay: 0s; }
+        .voice-bubble.playing .wave-bar:nth-child(2) { animation-delay: 0.1s; }
+        .voice-bubble.playing .wave-bar:nth-child(3) { animation-delay: 0.2s; }
+        .voice-bubble.playing .wave-bar:nth-child(4) { animation-delay: 0.3s; }
+
+        /* 图片预览缩略图限制 (修复：缩小50%且不溢出) */
+        .thumb-box { position: relative; display: inline-block; max-width: 120px; border-radius: 8px; overflow: hidden; }
+        .thumb-img { max-width: 100%; max-height: 120px; object-fit: cover; display: block; }
+        .preview-eye { position: absolute; bottom: 0; right: 0; background: rgba(0,0,0,0.6); width: 30px; height: 30px; border-top-left-radius: 8px; display: flex; align-items: center; justify-content: center; cursor: pointer; }
+        
+        /* 修复气泡溢出 */
+        .bubble { max-width: 85%; word-break: break-word; }
+        .sticker-img { width: 100px; height: 100px; object-fit: contain; }
     `;
     document.head.appendChild(styleSheet);
 
+    // 预览模态框
     const previewModalHTML = `
     <div id="media-preview-modal" class="modal-overlay hidden" style="background:#000; z-index:9999; display:none;">
         <button onclick="closePreview()" style="position:absolute; top:40px; right:20px; z-index:10000; background:rgba(255,255,255,0.2); color:#fff; border:none; width:40px; height:40px; border-radius:50%; font-size:20px;">✕</button>
@@ -35,8 +53,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // --- 1. 全局变量与工具 ---
     const DB_KEY = 'pepe_v33_final';
-    const CHUNK_SIZE = 16 * 1024; // 16KB 切片
-    const activeTransfers = {}; // 存储传输任务
+    const CHUNK_SIZE = 16 * 1024; 
+    const activeTransfers = {}; 
     
     // 预览逻辑
     window.previewMedia = (url, type) => {
@@ -90,18 +108,20 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
-    // 播放语音并控制特效
+    // ★ 修复：语音播放器 (带波纹特效)
     window.playVoice = (audioUrl, elementId) => {
-        const container = document.getElementById(elementId);
-        // 停止其他正在播放的
+        // 停止其他
         document.querySelectorAll('audio').forEach(a => { a.pause(); a.currentTime = 0; });
-        document.querySelectorAll('.voice-bubble').forEach(b => b.classList.remove('voice-playing'));
+        document.querySelectorAll('.voice-bubble').forEach(b => b.classList.remove('playing'));
 
+        const bubble = document.getElementById(elementId);
         const audio = new Audio(audioUrl);
-        container.classList.add('voice-playing');
+        
+        if(bubble) bubble.classList.add('playing');
+        
         audio.play().catch(e => alert("Play error: " + e));
         audio.onended = () => {
-            container.classList.remove('voice-playing');
+            if(bubble) bubble.classList.remove('playing');
         };
     };
 
@@ -225,16 +245,16 @@ document.addEventListener('DOMContentLoaded', () => {
                 renderFriends();
             }
 
-            // --- 文件接收逻辑 (含实时速度) ---
+            // --- 文件接收逻辑 (★ 修复：实时速度 & 文件名 & 预览) ---
             if (msg.type === 'file_start') {
                 activeTransfers[msg.fileId] = {
                     chunks: [],
                     totalSize: msg.totalSize,
                     receivedSize: 0,
                     startTime: Date.now(),
-                    lastBytes: 0,
+                    lastBytes: 0, // 上一次计算时的字节数
                     lastTime: Date.now(),
-                    fileName: msg.fileName, // ★ 确保保存原始文件名
+                    fileName: msg.fileName, // ★ 确保存储发送方文件名
                     fileType: msg.fileType
                 };
                 if(activeChatId === fid) {
@@ -247,13 +267,13 @@ document.addEventListener('DOMContentLoaded', () => {
                 const transfer = activeTransfers[msg.fileId];
                 if(transfer) {
                     transfer.chunks.push(msg.chunk);
-                    // 估算Base64大小
-                    const chunkSize = msg.chunk.length * 0.75; 
+                    // Base64长度转大约字节数
+                    const chunkSize = Math.floor(msg.chunk.length * 0.75);
                     transfer.receivedSize += chunkSize;
                     
-                    // 实时速度计算 (每100ms更新一次，保证视觉流畅)
+                    // ★ 实时速度计算 (接收端)
                     const now = Date.now();
-                    if(now - transfer.lastTime > 100) { 
+                    if(now - transfer.lastTime > 200) { // 200ms 更新一次
                         const bytesDiff = transfer.receivedSize - transfer.lastBytes;
                         const timeDiff = (now - transfer.lastTime) / 1000;
                         const speed = (bytesDiff / 1024) / timeDiff; // KB/s
@@ -273,19 +293,24 @@ document.addEventListener('DOMContentLoaded', () => {
                     const blob = b64toBlob(transfer.chunks.join(''), transfer.fileType);
                     const fileUrl = URL.createObjectURL(blob);
                     
-                    // 构造最终消息对象
+                    // ★ 核心修复：根据类型生成正确的消息类型，使接收方也能预览
+                    let msgType = 'file';
+                    if (transfer.fileType.startsWith('image')) msgType = 'image';
+                    else if (transfer.fileType.startsWith('video')) msgType = 'video';
+
                     const finalMsg = {
-                        type: isImage(transfer.fileType) ? 'image' : isVideo(transfer.fileType) ? 'video' : 'file',
+                        type: msgType,
                         content: fileUrl, 
-                        fileName: transfer.fileName, // ★ 使用传递过来的文件名
+                        fileName: transfer.fileName, // ★ 必须使用发送方传来的文件名
                         isSelf: false,
                         ts: Date.now()
                     };
 
+                    // 更新UI
                     replaceProgressWithContent(msg.fileId, finalMsg);
                     
-                    if(!db.history[fid]) db.history[fid] = [];
                     // 历史只存文本占位符
+                    if(!db.history[fid]) db.history[fid] = [];
                     const saveMsg = { ...finalMsg, content: '[File Saved]', type: 'text' };
                     db.history[fid].push(saveMsg);
                     saveDB();
@@ -340,7 +365,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     socket.emit('send_private', { targetId: activeChatId, type: 'file_end', fileId: fileId });
                     
                     const finalMsg = {
-                        type: isImage(file.type) ? 'image' : isVideo(file.type) ? 'video' : 'file',
+                        type: file.type.startsWith('image') ? 'image' : file.type.startsWith('video') ? 'video' : 'file',
                         content: URL.createObjectURL(file),
                         fileName: file.name,
                         isSelf: true
@@ -364,6 +389,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 sentBytes += chunk.length;
                 currentChunk++;
 
+                // 发送端实时速度
                 const now = Date.now();
                 if(now - lastUpdate > 200) {
                     const speed = ((sentBytes - lastBytes) / 1024) / ((now - lastUpdate)/1000);
@@ -375,8 +401,6 @@ document.addEventListener('DOMContentLoaded', () => {
         };
     }
 
-    function isImage(type) { return type && type.startsWith('image'); }
-    function isVideo(type) { return type && type.startsWith('video'); }
     function b64toBlob(b64Data, contentType) {
         const sliceSize = 512;
         const byteCharacters = atob(b64Data);
@@ -439,42 +463,43 @@ document.addEventListener('DOMContentLoaded', () => {
         const container = document.getElementById('messages-container');
         const div = document.createElement('div');
         div.className = `msg-row ${isSelf?'self':'other'}`;
-        const uid = Date.now() + Math.random().toString().substr(2,5); // 生成唯一ID用于语音动画定位
+        const uid = Date.now() + Math.random().toString().substr(2,5); 
 
         let html = '';
         if(msg.type === 'text') {
             html = `<div class="bubble">${msg.content}</div>`;
         } 
         else if (msg.type === 'sticker') {
-            // ★ 修复表情不显示
+            // ★ 修复表情不显示 (确保img类名正确)
             html = `<div class="bubble" style="background:transparent; border:none; box-shadow:none;">
-                        <img src="${msg.content}" style="width:80px; height:80px;">
+                        <img src="${msg.content}" class="sticker-img">
                     </div>`;
         }
         else if (msg.type === 'voice') {
-            // ★ 修复语音播放 + 波纹动画
-            html = `<div id="voice-${uid}" class="bubble voice-bubble" style="cursor:pointer; display:flex; align-items:center; gap:5px; background:${isSelf?'#59BC10':'#fff'}; color:${isSelf?'#fff':'#000'}" onclick="playVoice('${msg.content}', 'voice-${uid}')">
+            // ★ 修复语音：增加 playing 类控制波纹
+            html = `<div id="voice-${uid}" class="bubble voice-bubble ${isSelf?'self':'other'}" 
+                        style="cursor:pointer; display:flex; align-items:center; gap:5px; background:${isSelf?'#59BC10':'#fff'}; color:${isSelf?'#fff':'#000'}" 
+                        onclick="playVoice('${msg.content}', 'voice-${uid}')">
                         <span style="font-weight:bold;">▶ Voice</span>
                         <div class="wave-visual">
-                            <div class="wave-bar"></div><div class="wave-bar"></div><div class="wave-bar"></div>
+                            <div class="wave-bar"></div><div class="wave-bar"></div><div class="wave-bar"></div><div class="wave-bar"></div>
                         </div>
                     </div>`;
         } 
         else if (msg.type === 'image') {
-            // ★ 缩略图缩小50% + 接收端预览
+            // ★ 修复：缩略图限制在 120px，且使用 .thumb-box 包裹
             html = `<div class="bubble" style="padding:4px;">
-                        <div style="position:relative; display:inline-block;">
+                        <div class="thumb-box">
                             <img src="${msg.content}" class="thumb-img">
-                            <div style="position:absolute; bottom:0; right:0; background:rgba(0,0,0,0.6); width:24px; height:24px; border-top-left-radius:6px; display:flex; align-items:center; justify-content:center; cursor:pointer;"
-                                 onclick="previewMedia('${msg.content}', 'image')">
-                                <span style="color:#fff; font-size:14px;">👁</span>
+                            <div class="preview-eye" onclick="previewMedia('${msg.content}', 'image')">
+                                <span style="color:#fff; font-size:16px;">👁</span>
                             </div>
                         </div>
                     </div>`;
         } 
         else if (msg.type === 'video') {
             html = `<div class="bubble" style="padding:4px;">
-                        <div style="position:relative; width:80px; height:60px; background:#000; border-radius:6px; display:flex; align-items:center; justify-content:center;">
+                        <div style="position:relative; width:120px; height:80px; background:#000; border-radius:6px; display:flex; align-items:center; justify-content:center;">
                             <div style="color:#fff; font-size:8px; position:absolute; bottom:2px; left:2px; max-width:100%; overflow:hidden; white-space:nowrap;">${msg.fileName||'Video'}</div>
                             <div style="width:30px; height:30px; background:rgba(255,255,255,0.3); border-radius:50%; display:flex; align-items:center; justify-content:center; cursor:pointer;"
                                  onclick="previewMedia('${msg.content}', 'video')">
@@ -484,8 +509,8 @@ document.addEventListener('DOMContentLoaded', () => {
                     </div>`;
         } 
         else if (msg.type === 'file') {
-            // ★ 修复文件名显示
-            html = `<div class="bubble">📂 ${msg.fileName || 'File'}<br><a href="${msg.content}" download="${msg.fileName || 'download'}" style="text-decoration:underline;">Download</a></div>`;
+            // ★ 修复：确保 msg.fileName 被正确使用
+            html = `<div class="bubble">📂 ${msg.fileName || 'File'}<br><a href="${msg.content}" download="${msg.fileName || 'download'}" style="text-decoration:underline; font-weight:bold;">Download</a></div>`;
         }
         
         div.innerHTML = html;
@@ -501,7 +526,7 @@ document.addEventListener('DOMContentLoaded', () => {
         div.className = `msg-row ${isSelf?'self':'other'}`;
         div.innerHTML = `
             <div class="bubble" style="min-width:160px; font-size:12px;">
-                <div style="font-weight:bold; margin-bottom:4px;">${isSelf?'⬆':'⬇'} ${fileName}</div>
+                <div style="font-weight:bold; margin-bottom:4px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:150px;">${isSelf?'⬆':'⬇'} ${fileName}</div>
                 <div style="background:#ddd; height:4px; border-radius:2px; overflow:hidden; margin-bottom:4px;">
                     <div id="bar-${fileId}" style="width:0%; height:100%; background:${isSelf?'#fff':'#59BC10'}; transition:width 0.1s;"></div>
                 </div>
@@ -523,7 +548,8 @@ document.addEventListener('DOMContentLoaded', () => {
             const percent = Math.min(100, Math.floor((current / total) * 100));
             bar.style.width = `${percent}%`;
             pct.innerText = `${percent}%`;
-            // ★ 修复：动态显示 MB/s 或 KB/s
+            
+            // 实时速度格式化
             if (speed > 1024) spd.innerText = `${(speed/1024).toFixed(1)} MB/s`;
             else spd.innerText = `${Math.floor(speed)} KB/s`;
         }
@@ -544,7 +570,7 @@ document.addEventListener('DOMContentLoaded', () => {
     };
     document.getElementById('chat-back-btn').onclick = window.goBack;
 
-    // ★ 模式切换 (修复：可来回切换)
+    // 模式切换
     const modeSwitch = document.getElementById('mode-switch-btn');
     const voiceBtn = document.getElementById('voice-record-btn');
     const textWrapper = document.getElementById('text-input-wrapper');
@@ -568,7 +594,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     };
 
-    // 录音事件 (Touch)
+    // 录音事件
     let mediaRecorder, audioChunks;
     const startRec = async (e) => {
         if(e) e.preventDefault();
