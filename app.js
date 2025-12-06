@@ -1,87 +1,135 @@
 document.addEventListener('DOMContentLoaded', () => {
 
-    // ★★★ 请填入你的 Render 地址 ★★★
     const SERVER_URL = 'https://wojak-backend.onrender.com';
 
-    // --- 0. 动态样式 ---
+    // --- 0. 样式重写 (修复卡片溢出、进度条、布局) ---
     const styleSheet = document.createElement("style");
     styleSheet.innerText = `
         :root { --pepe-green: #59BC10; --bg: #F2F2F7; --danger: #FF3B30; }
-        body { background: var(--bg); font-family: sans-serif; -webkit-tap-highlight-color: transparent; }
+        body { background: var(--bg); font-family: sans-serif; -webkit-tap-highlight-color: transparent; overscroll-behavior-y: none; }
+        
         .defi-nav { display: none !important; }
-        .scroll-content { padding-bottom: 30px !important; }
-        
-        /* 列表项 */
-        .k-list-item { background: #fff; border-radius: 14px; padding: 12px; margin-bottom: 10px; position: relative; transition: all 0.1s; border: 2px solid transparent; }
-        .k-list-item:active { transform: scale(0.98); background: #f0f0f0; }
-        
-        /* 抖动动画 */
-        @keyframes shake { 0%,100%{transform:translateX(0);} 25%{transform:translateX(-4px) rotate(-1deg);} 75%{transform:translateX(4px) rotate(1deg);} }
-        .shake-active { animation: shake 0.4s infinite; border-color: var(--danger); background: #fff0f0; }
-        
-        /* 跑马灯 */
-        .marquee-box { overflow: hidden; max-width: 140px; white-space: nowrap; display: inline-block; vertical-align: middle; }
-        .marquee-text { display: inline-block; padding-left: 100%; animation: scroll 3s linear infinite; color: var(--danger); font-weight: 900; font-size: 10px; }
-        @keyframes scroll { 100% { transform: translateX(-100%); } }
+        .scroll-content { padding-bottom: 50px !important; }
 
-        /* 列表编辑按钮 */
-        .list-edit-btn { position: absolute; right: 10px; top: 50%; transform: translateY(-50%); padding: 10px; color: #ccc; font-size: 18px; z-index: 10; }
+        /* 头部 */
+        .defi-header { display: flex; justify-content: space-between; align-items: center; padding: 10px 15px; background: #fff; z-index: 100; position: relative; border-bottom: 1px solid #eee; }
+        .user-pill { display: flex; align-items: center; gap: 10px; background: #f5f5f5; padding: 5px 10px; border-radius: 20px; cursor: pointer; }
+        .header-avatar { width: 32px; height: 32px; border-radius: 50%; background: #ddd; object-fit: cover; }
 
-        /* 聊天底部 */
-        .chat-footer { position: absolute; bottom: 0; width: 100%; height: 60px; background: #fff; display: flex; align-items: center; padding: 0 10px; border-top: 1px solid #eee; z-index: 200; box-sizing: border-box; }
-        .footer-tool { width: 40px; height: 40px; border-radius: 50%; background: #f0f0f0; border: none; font-size: 20px; flex-shrink: 0; margin-right: 5px; display: flex; justify-content: center; align-items: center; }
-        .input-zone { flex: 1; position: relative; height: 40px; margin: 0 5px; display: flex; }
-        
-        /* 输入框与语音互斥 */
-        .text-wrapper { width: 100%; height: 100%; display: flex; align-items: center; gap: 5px; background: #fff; z-index: 20; }
+        /* 底部输入栏 */
+        .chat-footer { 
+            position: absolute; bottom: 0; left: 0; right: 0; height: 60px; 
+            background: #fff; display: flex; align-items: center; padding: 0 10px; 
+            border-top: 1px solid #eee; z-index: 200; 
+        }
+        .footer-tool { width: 40px; height: 40px; border-radius: 50%; background: #f0f0f0; border: none; font-size: 20px; flex-shrink: 0; margin: 0 3px; display: flex; justify-content: center; align-items: center; cursor: pointer; }
+        .input-zone { flex: 1; position: relative; height: 40px; margin: 0 5px; }
+        .text-wrapper { width: 100%; height: 100%; display: flex; align-items: center; position: absolute; top: 0; left: 0; z-index: 20; background: #fff; }
         .text-wrapper.hidden { display: none !important; }
-        #chat-input { flex: 1; height: 100%; border-radius: 20px; background: #f9f9f9; border: 1px solid #ddd; padding: 0 15px; outline: none; }
-        .send-arrow { width: 40px; height: 40px; border-radius: 50%; background: var(--pepe-green); color: #fff; border: none; font-weight: bold; flex-shrink: 0; }
+        #chat-input { flex: 1; height: 100%; border-radius: 20px; background: #f9f9f9; border: 1px solid #ddd; padding: 0 15px; outline: none; font-size: 16px; }
+        .send-arrow { width: 40px; height: 40px; border-radius: 50%; background: var(--pepe-green); color: #fff; border: none; font-weight: bold; margin-left: 5px; cursor: pointer; }
         
-        .voice-btn-long { position: absolute; top: 0; left: 0; width: 100%; height: 100%; border-radius: 20px; background: var(--danger); color: #fff; font-weight: bold; border: none; z-index: 10; display: none; }
+        .voice-btn-long { 
+            width: 100%; height: 100%; border-radius: 20px; background: var(--danger); 
+            color: #fff; font-weight: bold; border: none; position: absolute; top: 0; left: 0; z-index: 10; display: none; 
+        }
         .voice-btn-long.active { display: block !important; }
         .voice-btn-long.recording { animation: pulse 1s infinite; }
-        @keyframes pulse { 0%{transform:scale(1);} 50%{transform:scale(1.02);} }
 
-        /* 气泡 */
-        .bubble { padding: 10px 14px; border-radius: 18px; max-width: 80%; word-break: break-word; box-shadow: 0 1px 2px rgba(0,0,0,0.1); }
+        /* 列表项 */
+        .k-list-item { background: #fff; border-radius: 12px; padding: 12px; margin-bottom: 10px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); }
+        .shake-active { animation: shake 0.5s infinite; border-left: 4px solid var(--danger); }
+        .marquee-box { overflow: hidden; max-width: 120px; white-space: nowrap; display: inline-block; vertical-align: middle; }
+        .marquee-text { display: inline-block; padding-left: 100%; animation: scroll 4s linear infinite; color: var(--danger); font-size: 10px; font-weight: 900; }
+        .list-edit-btn { position: absolute; right: 15px; top: 50%; transform: translateY(-50%); color: #ccc; padding: 10px; font-size: 18px; z-index: 10; }
+
+        /* ★ 气泡核心修复 ★ */
+        .bubble { 
+            padding: 10px 14px; border-radius: 18px; max-width: 80%; 
+            word-break: break-word; box-shadow: 0 1px 2px rgba(0,0,0,0.1); 
+            position: relative;
+        }
+        /* 特殊气泡：去除背景和阴影，由内容自适应 (针对文件、图片、视频) */
+        .bubble.clean { 
+            background: transparent !important; 
+            padding: 0 !important; 
+            box-shadow: none !important; 
+            border: none !important;
+        }
+
         .msg-row.self .bubble { background: var(--pepe-green); color: #fff; }
         .msg-row.other .bubble { background: #fff; color: #000; border: 1px solid #eee; }
         
-        /* 媒体与文档 */
-        .thumb-box { max-width: 180px; border-radius: 8px; overflow: hidden; background: #000; }
-        .thumb-img { max-width: 100%; height: auto; display: block; }
-        .sticker-img { width: 90px; height: 90px; object-fit: contain; }
+        /* 进度条修复 */
+        .progress-wrapper { 
+            background: #fff; padding: 12px; border-radius: 12px; 
+            border: 2px solid var(--pepe-green); min-width: 180px; 
+            box-shadow: 0 4px 10px rgba(0,0,0,0.1);
+        }
+        .msg-row.self .progress-wrapper { border-color: #fff; background: var(--pepe-green); color: #fff; }
+        .msg-row.other .progress-wrapper { border-color: #eee; background: #fff; color: #333; }
         
-        .doc-card { display: flex; align-items: center; gap: 10px; background: rgba(255,255,255,0.9); padding: 10px; border-radius: 8px; text-decoration: none; color: #333; min-width: 180px; }
-        .doc-info { flex: 1; overflow: hidden; }
-        .doc-name { font-weight: bold; font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-        .doc-type { font-size: 10px; color: #666; font-weight: 900; }
+        .progress-track { height: 6px; background: rgba(0,0,0,0.1); border-radius: 3px; margin: 8px 0; overflow: hidden; }
+        .msg-row.self .progress-track { background: rgba(255,255,255,0.3); }
+        
+        .progress-fill { height: 100%; width: 0%; transition: width 0.1s linear; }
+        .msg-row.self .progress-fill { background: #fff; } /* 发送方白色条 */
+        .msg-row.other .progress-fill { background: var(--pepe-green); } /* 接收方绿色条 */
 
+        /* ★ 文档卡片修复 (填满气泡，不留白) ★ */
+        .doc-card { 
+            display: flex; align-items: center; gap: 12px; 
+            background: #fff; padding: 12px; border-radius: 12px; 
+            text-decoration: none; color: #333; border: 1px solid #eee;
+            width: 220px; /* 固定宽度保证对齐 */
+            box-sizing: border-box;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+        }
+        .doc-icon { font-size: 28px; flex-shrink: 0; }
+        .doc-info { display: flex; flex-direction: column; overflow: hidden; flex: 1; min-width: 0; }
+        .doc-name { 
+            font-weight: bold; font-size: 14px; 
+            white-space: nowrap; overflow: hidden; text-overflow: ellipsis; 
+            display: block;
+        }
+        .doc-type { font-size: 10px; color: #888; font-weight: 700; margin-top: 3px; }
+        
+        /* 媒体 */
+        .thumb-box { display: block; border-radius: 12px; overflow: hidden; background: #000; max-width: 200px; }
+        .thumb-img { display: block; max-width: 100%; height: auto; }
+        .sticker-img { width: 100px !important; height: 100px !important; object-fit: contain; }
+        
         /* 音频播放器 */
-        .audio-player { display: flex; align-items: center; gap: 8px; }
-        .audio-btn { width: 28px; height: 28px; border-radius: 50%; background: rgba(255,255,255,0.3); border: none; color: inherit; font-size: 12px; display: flex; justify-content: center; align-items: center; }
-        .msg-row.other .audio-btn { background: #eee; color: #333; }
-
-        /* 模态框 */
-        .modal-overlay { z-index: 100000; background: rgba(0,0,0,0.8); }
-        .numpad-container { padding: 10px; text-align: center; }
-        .id-display-screen { font-size: 36px; color: var(--pepe-green); border-bottom: 2px solid #eee; margin-bottom: 20px; font-weight: 900; letter-spacing: 4px; }
+        .audio-player { display: flex; align-items: center; gap: 10px; padding: 5px 0; }
+        .audio-btn { width: 32px; height: 32px; border-radius: 50%; background: rgba(255,255,255,0.25); border: 1px solid rgba(255,255,255,0.4); color: inherit; display: flex; justify-content: center; align-items: center; cursor: pointer; }
+        .msg-row.other .audio-btn { background: #f0f0f0; border: 1px solid #ddd; color: #333; }
+        
+        /* 模态框与动画 */
+        .modal-overlay { z-index: 100000 !important; background: rgba(0,0,0,0.8); }
+        .numpad-container { padding: 15px; text-align: center; }
+        .id-display-screen { font-size: 36px; color: var(--pepe-green); border-bottom: 3px solid #eee; margin-bottom: 20px; font-weight: 900; letter-spacing: 4px; height: 50px; }
         .numpad-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 15px; }
-        .num-btn { width: 60px; height: 60px; border-radius: 12px; background: #fff; box-shadow: 0 3px 0 #eee; border: 1px solid #ddd; font-size: 24px; font-weight: bold; display: flex; justify-content: center; align-items: center; }
-        .num-btn.connect { background: var(--pepe-green); color: #fff; border: none; }
-        .cancel-btn { position: absolute; top: 5px; right: 5px; width: 20px; height: 20px; background: var(--danger); color: #fff; border-radius: 50%; font-size: 12px; text-align: center; line-height: 20px; cursor: pointer; }
+        .num-btn { width: 60px; height: 60px; border-radius: 12px; background: #fff; box-shadow: 0 4px 0 #ddd; border: 2px solid #eee; font-size: 24px; font-weight: bold; display: flex; justify-content: center; align-items: center; cursor: pointer; }
+        .num-btn:active { transform: translateY(4px); box-shadow: none; }
+        .num-btn.connect { background: var(--pepe-green); color: #fff; border-color: #46960C; box-shadow: 0 4px 0 #46960C; }
+        
+        @keyframes scroll { 100% { transform: translateX(-100%); } }
+        @keyframes pulse { 0% {transform: scale(1);} 50% {transform: scale(1.05);} }
+        
+        .cancel-btn { position: absolute; top: -6px; right: -6px; width: 24px; height: 24px; background: var(--danger); color: #fff; border-radius: 50%; font-size: 14px; font-weight: bold; display: flex; justify-content: center; align-items: center; cursor: pointer; box-shadow: 0 2px 5px rgba(0,0,0,0.2); z-index: 10; }
+        .drag-overlay { display: none; z-index: 99999; }
+        .drag-overlay.active { display: flex; }
     `;
     document.head.appendChild(styleSheet);
 
-    // 预览HTML
     const previewHTML = `<div id="media-preview-modal" class="modal-overlay hidden" style="background:rgba(0,0,0,0.95);z-index:99999;"><button onclick="closePreview()" style="position:absolute;top:40px;right:20px;color:#fff;font-size:30px;background:none;border:none;">✕</button><a id="preview-dl" href="#" download style="position:absolute;top:40px;right:70px;font-size:30px;text-decoration:none;">⬇️</a><div id="preview-container" style="width:100%;height:100%;display:flex;justify-content:center;align-items:center;"></div></div>`;
     document.body.insertAdjacentHTML('beforeend', previewHTML);
 
     // --- 1. 数据 ---
-    const DB_KEY = 'pepe_v51_final_dial_fix';
+    const DB_KEY = 'pepe_v52_final_fix';
     const CHUNK_SIZE = 12 * 1024;
-    let db, socket, activeChatId, activeDownloads={}, isSending=false, cancelFlag={}, uploadQueue=[], globalAudio=null;
+    let db, socket, activeChatId;
+    let activeDownloads = {}, isSending = false, cancelFlag = {}, uploadQueue = [], globalAudio = null;
 
     try {
         db = JSON.parse(localStorage.getItem(DB_KEY));
@@ -100,22 +148,21 @@ document.addEventListener('DOMContentLoaded', () => {
         document.getElementById('my-avatar').src = `https://api.dicebear.com/7.x/notionists/svg?seed=${db.profile.avatarSeed}`;
         renderFriends();
         setupDialpad();
-        setupStickers(); 
-        
+        setupStickers();
         setTimeout(() => {
             const q = document.getElementById("qrcode");
-            if(q && window.QRCode) { q.innerHTML=''; new QRCode(q, {text:MY_ID, width:60, height:60, colorDark:"#000", colorLight:"#fff"}); }
+            if(q && window.QRCode) { q.innerHTML=''; new QRCode(q, {text:MY_ID, width:60, height:60, colorDark:"#59BC10", colorLight:"#FFFFFF"}); }
         }, 500);
     };
 
-    // --- 3. 网络核心 (隧道+后台接收) ---
+    // --- 3. 网络 (Tunnel V46 内核) ---
     if(!SERVER_URL.includes('onrender')) alert("Config URL!");
     else {
         socket = io(SERVER_URL, { reconnection: true, transports: ['websocket'] });
         socket.on('connect', () => { 
             document.getElementById('conn-status').className = "status-dot green"; 
             socket.emit('register', MY_ID); 
-            isSending = false;
+            isSending = false; processQueue();
         });
         
         socket.on('receive_msg', (msg) => {
@@ -125,46 +172,42 @@ document.addEventListener('DOMContentLoaded', () => {
             }
             const friend = db.friends.find(f=>f.id===fid);
 
-            // 1. 处理隧道文件
+            // 1. 隧道文件
             if(msg.type === 'tunnel_file_packet') {
-                try {
-                    const p = JSON.parse(msg.content);
-                    handleTunnelPacket(p, fid, friend);
-                } catch(e) { console.error(e); }
-                return; 
+                try { const p = JSON.parse(msg.content); handleTunnelPacket(p, fid, friend); } catch(e){} return;
             }
 
-            // 2. 处理普通消息
+            // 2. 普通消息
             const m = { type: msg.type, content: msg.content, isSelf: false, ts: msg.timestamp, fileName: msg.fileName };
             saveAndNotify(fid, m, friend);
         });
     }
 
-    // 保存消息并通知
     function saveAndNotify(fid, msg, friend) {
         if(!db.history[fid]) db.history[fid] = [];
         db.history[fid].push(msg);
         saveDB();
 
         if(activeChatId === fid) {
-            appendMsgDOM(msg); 
+            appendMsgDOM(msg);
         } else {
-            if(friend) friend.unread = true;
-            saveDB(); renderFriends();
-            if(navigator.vibrate) navigator.vibrate([100, 50, 100]);
-            if('speechSynthesis' in window) {
-                const u = new SpeechSynthesisUtterance("Message coming");
-                window.speechSynthesis.speak(u);
-            } else document.getElementById('msg-sound').play().catch(()=>{});
+            if(friend) friend.unread = true; saveDB(); renderFriends();
+            if(navigator.vibrate) navigator.vibrate([100,50,100]);
+            document.getElementById('msg-sound').play().catch(()=>{});
         }
     }
 
-    // 隧道分片接收
+    // ★ 修复：防止双重显示 ★
     function handleTunnelPacket(p, fid, friend) {
         if(p.subType === 'chunk') {
             if(activeDownloads[p.fileId] === 'cancelled') return;
             if(!activeDownloads[p.fileId]) {
-                activeDownloads[p.fileId] = { chunks:[], totalSize:p.totalSize, receivedSize:0, lastTime:Date.now(), lastBytes:0, fileName:p.fileName, fileType:p.fileType };
+                activeDownloads[p.fileId] = { 
+                    chunks:[], totalSize:p.totalSize, receivedSize:0, 
+                    lastTime:Date.now(), lastBytes:0, 
+                    fileName: p.fileName || "Unknown File", // 修复 undefined
+                    fileType:p.fileType 
+                };
                 if(activeChatId === fid) appendProgressBubble(fid, p.fileId, p.fileName, false);
             }
             const dl = activeDownloads[p.fileId];
@@ -192,133 +235,28 @@ document.addEventListener('DOMContentLoaded', () => {
 
                 const finalMsg = { type, content: url, fileName: dl.fileName, isSelf: false, ts: Date.now() };
                 
+                // 1. 替换进度条 (UI 更新)
                 if(activeChatId === fid) replaceProgressWithContent(p.fileId, finalMsg);
                 
-                saveAndNotify(fid, finalMsg, friend);
+                // 2. 仅存库，不调用 saveAndNotify (防止重复 append)
+                if(!db.history[fid]) db.history[fid] = [];
+                db.history[fid].push(finalMsg); 
+                saveDB();
+                
+                // 后台提示
+                if(activeChatId !== fid) {
+                    if(friend) friend.unread = true; saveDB(); renderFriends();
+                    document.getElementById('msg-sound').play().catch(()=>{});
+                }
+
                 delete activeDownloads[p.fileId];
-                document.getElementById('success-sound').play().catch(()=>{});
             }
         }
     }
 
-    // --- 4. UI 渲染 ---
-    function renderFriends() {
-        const list = document.getElementById('friends-list-container');
-        list.innerHTML = '';
-        db.friends.forEach(f => {
-            const div = document.createElement('div');
-            div.className = `k-list-item ${f.unread ? 'shake-active' : ''}`;
-            
-            let statusHtml = '';
-            if(f.unread) {
-                statusHtml = `<div class="marquee-box"><div class="marquee-text">📢 MESSAGE COMING...</div></div>`;
-            } else {
-                statusHtml = `<div style="font-size:12px; color:#888;">Tap to chat</div>`;
-            }
-
-            div.innerHTML = `
-                <div style="display:flex; align-items:center; gap:10px;">
-                    <img src="https://api.dicebear.com/7.x/notionists/svg?seed=${f.id}" style="width:45px; border-radius:50%; border:2px solid #eee;">
-                    <div style="flex:1; overflow:hidden;">
-                        <div style="font-weight:bold; font-size:16px;">${f.alias||f.id}</div>
-                        ${statusHtml}
-                    </div>
-                    <div class="list-edit-btn" onclick="event.stopPropagation(); window.editContactAlias('${f.id}')">✎</div>
-                </div>`;
-            div.onclick = () => { f.unread=false; saveDB(); renderFriends(); openChat(f.id); };
-            list.appendChild(div);
-        });
-    }
-    
-    window.editContactAlias = (fid) => {
-        const f = db.friends.find(x=>x.id===fid);
-        const n = prompt("Alias:", f.alias||fid);
-        if(n) { f.alias=n; saveDB(); renderFriends(); }
-    };
-
-    function appendMsgDOM(msg) {
-        const box = document.getElementById('messages-container');
-        const div = document.createElement('div');
-        div.className = `msg-row ${msg.isSelf ? 'self' : 'other'}`;
-        let html = '';
-        
-        if(msg.type === 'text') html = `<div class="bubble">${msg.content}</div>`;
-        else if(msg.type === 'sticker') html = `<div style="padding:5px;"><img src="${msg.content}" class="sticker-img"></div>`;
-        else if(msg.type === 'voice') {
-            html = `<div class="bubble audio-player"><span>🎤</span><button class="audio-btn" onclick="handleAudio('play', '${msg.content}')">▶</button><button class="audio-btn" onclick="handleAudio('pause')">⏸</button><button class="audio-btn" onclick="handleAudio('stop')">⏹</button></div>`;
-        } 
-        else if(msg.type === 'image') html = `<div class="bubble" style="padding:4px;background:none;"><div class="thumb-box" onclick="previewMedia('${msg.content}','image')"><img src="${msg.content}" class="thumb-img"></div></div>`;
-        else if(msg.type === 'video') html = `<div class="bubble" style="padding:4px;background:none;"><div class="thumb-box" onclick="previewMedia('${msg.content}','video')"><video src="${msg.content}#t=0.1" class="thumb-img" preload="metadata" muted></video><div style="position:absolute;top:40%;left:45%;color:#fff;font-size:24px;">▶</div></div></div>`;
-        else if(msg.type === 'file') {
-            let icon = '📄';
-            if(msg.fileName.match(/\.(doc|docx)$/i)) icon='📝';
-            else if(msg.fileName.match(/\.(xls|xlsx)$/i)) icon='📊';
-            else if(msg.fileName.match(/\.(ppt|pptx)$/i)) icon='📉';
-            html = `<div class="bubble" style="padding:5px;"><a class="doc-card" href="${msg.content}" download="${msg.fileName}"><div style="font-size:24px;">${icon}</div><div class="doc-info"><div class="doc-name">${msg.fileName}</div><div class="doc-type">CLICK SAVE</div></div></a></div>`;
-        }
-        
-        div.innerHTML = html;
-        box.appendChild(div);
-        box.scrollTop = box.scrollHeight;
-    }
-
-    // --- 5. 拨号盘逻辑 (★ 修复：变量作用域 ★) ---
-    let dialInput = "";
-    
-    // 生成拨号盘
-    const setupDialpad = () => {
-        const modalBody = document.querySelector('#add-overlay .modal-body');
-        if(modalBody) {
-            modalBody.innerHTML = `
-            <div class="numpad-container">
-                <div id="dial-display" class="id-display-screen">____</div>
-                <div class="numpad-grid">
-                    <div class="num-btn" onclick="dial(1)">1</div><div class="num-btn" onclick="dial(2)">2</div><div class="num-btn" onclick="dial(3)">3</div>
-                    <div class="num-btn" onclick="dial(4)">4</div><div class="num-btn" onclick="dial(5)">5</div><div class="num-btn" onclick="dial(6)">6</div>
-                    <div class="num-btn" onclick="dial(7)">7</div><div class="num-btn" onclick="dial(8)">8</div><div class="num-btn" onclick="dial(9)">9</div>
-                    <div class="num-btn clear" onclick="dial('C')">C</div><div class="num-btn" onclick="dial(0)">0</div>
-                    <div class="num-btn connect" onclick="dial('OK')">🤝</div>
-                </div>
-            </div>`;
-        }
-    };
-    
-    // 全局 dial 函数
-    window.dial = (key) => {
-        const display = document.getElementById('dial-display');
-        if(key === 'C') { dialInput = ""; display.innerText = "____"; return; }
-        
-        if(key === 'OK') {
-            if(dialInput.length === 4) {
-                if(dialInput === MY_ID) { alert("Cannot add yourself!"); return; }
-                const targetId = dialInput; // ★ 关键：锁住变量
-                document.querySelectorAll('.modal-overlay').forEach(e=>e.classList.add('hidden')); // 先关弹窗
-                setTimeout(() => {
-                    handleAddFriend(targetId); // 传锁住的变量
-                }, 100);
-                dialInput = ""; display.innerText = "____";
-            } else { alert("Enter 4 digits"); }
-            return;
-        }
-        
-        if(dialInput.length < 4) {
-            dialInput += key; display.innerText = dialInput.padEnd(4,'_');
-            if(navigator.vibrate) navigator.vibrate(30);
-        }
-    };
-
-    function handleAddFriend(id) {
-        if(id === MY_ID) return;
-        if(!db.friends.find(f => f.id === id)) {
-            db.friends.push({ id: id, addedAt: Date.now(), alias: `User ${id}`, unread: false });
-            saveDB(); renderFriends();
-        }
-        openChat(id);
-    }
-
-    // --- 6. 发送队列 (文件) ---
+    // --- 发送逻辑 ---
     function addToQueue(file) { uploadQueue.push(file); processQueue(); }
-    function processQueue() { if(isSending || uploadQueue.length === 0) return; sendFileChunked(uploadQueue.shift()); }
+    function processQueue() { if(isSending || uploadQueue.length === 0) return; const file = uploadQueue.shift(); sendFileChunked(file); }
 
     function sendFileChunked(file) {
         if(!activeChatId || !socket.connected) { alert("Net Error"); return; }
@@ -333,8 +271,9 @@ document.addEventListener('DOMContentLoaded', () => {
         appendProgressBubble(activeChatId, fileId, sendName, true);
         
         let offset=0, lastTime=Date.now(), lastBytes=0;
+
         const readNext = () => {
-            if (cancelFlag[fileId] || !socket.connected) { isSending = false; setTimeout(processQueue, 500); return; }
+            if (cancelFlag[fileId]) { isSending = false; setTimeout(processQueue, 500); return; }
             
             if (offset >= total) {
                 socket.emit('send_private', { targetId: activeChatId, type: 'tunnel_file_packet', content: JSON.stringify({ subType: 'end', fileId }) });
@@ -345,12 +284,13 @@ document.addEventListener('DOMContentLoaded', () => {
                 else if(sendType.startsWith('audio')) type = 'voice';
                 
                 const m = { type, content: URL.createObjectURL(file), fileName: sendName, isSelf: true, ts: Date.now() };
-                replaceProgressWithContent(fileId, m);
+                replaceProgressWithContent(fileId, m); // 替换自己的进度条
                 
                 if(!db.history[activeChatId]) db.history[activeChatId] = [];
-                db.history[activeChatId].push(m); saveDB();
+                db.history[activeChatId].push(m); saveDB(); // 仅存库
                 
-                isSending = false; setTimeout(processQueue, 200); return;
+                isSending = false; setTimeout(processQueue, 300);
+                return;
             }
             
             const chunk = file.slice(offset, offset + CHUNK_SIZE);
@@ -359,7 +299,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 const b64 = e.target.result.split(',')[1];
                 socket.emit('send_private', {
                     targetId: activeChatId, type: 'tunnel_file_packet',
-                    content: JSON.stringify({ subType: 'chunk', fileId, data: b64, fileName: sendName, fileType: sendType, totalSize: total })
+                    content: JSON.stringify({
+                        subType: 'chunk', fileId, data: b64,
+                        fileName: sendName, fileType: sendType, totalSize: total
+                    })
                 });
                 offset += chunk.size;
                 const now = Date.now();
@@ -375,85 +318,118 @@ document.addEventListener('DOMContentLoaded', () => {
         readNext();
     }
 
-    // --- 7. 交互逻辑 ---
-    function openChat(id) {
-        try{ if(window.speechSynthesis) window.speechSynthesis.cancel(); }catch(e){}
-        activeChatId = id;
-        const f = db.friends.find(x => x.id === id);
-        document.getElementById('chat-partner-name').innerText = f ? (f.alias || f.id) : id;
-        
-        // 强制重置底部
-        document.getElementById('text-input-wrapper').classList.remove('hidden');
-        document.getElementById('voice-record-btn').classList.remove('active');
-        document.getElementById('mode-switch-btn').innerText = "🎤";
-        
-        const view = document.getElementById('view-chat');
-        view.classList.remove('right-sheet');
-        view.classList.add('active');
-        
-        window.history.pushState({ chat: true }, "");
-        
-        const box = document.getElementById('messages-container');
-        box.innerHTML = '';
-        const msgs = db.history[id] || [];
-        msgs.forEach(m => appendMsgDOM(m));
+    function traverseFileTree(item) {
+        if (item.isFile) { item.file(file => addToQueue(file)); }
+        else if (item.isDirectory) {
+            const dirReader = item.createReader();
+            dirReader.readEntries(entries => {
+                for (let i=0; i<entries.length; i++) traverseFileTree(entries[i]);
+            });
+        }
     }
 
-    window.goBack = () => {
-        if(history.state && history.state.chat) history.back();
+    // --- UI 渲染 ---
+    function appendMsgDOM(msg) {
+        const box = document.getElementById('messages-container');
+        const div = document.createElement('div');
+        div.className = `msg-row ${msg.isSelf ? 'self' : 'other'}`;
+        let html = '';
+        
+        if(msg.type === 'text') html = `<div class="bubble">${msg.content}</div>`;
+        else if(msg.type === 'sticker') html = `<div style="padding:0;"><img src="${msg.content}" class="sticker-img"></div>`;
+        
+        else if(msg.type === 'voice') {
+            html = `<div class="bubble audio-player"><span>🎤</span><button class="audio-btn" onclick="handleAudio('play','${msg.content}')">▶</button><button class="audio-btn" onclick="handleAudio('pause')">⏸</button><button class="audio-btn" onclick="handleAudio('stop')">⏹</button></div>`;
+        } 
+        
+        else if(msg.type === 'image') {
+            // ★ 修复：clean bubble 样式 ★
+            html = `<div class="bubble clean"><div class="thumb-box" onclick="previewMedia('${msg.content}','image')"><img src="${msg.content}" class="thumb-img"></div></div>`;
+        }
+        
+        else if(msg.type === 'video') {
+            html = `<div class="bubble clean"><div class="thumb-box" onclick="previewMedia('${msg.content}','video')"><video src="${msg.content}#t=0.1" class="thumb-img" preload="metadata" muted></video><div style="position:absolute;top:40%;left:45%;color:#fff;font-size:30px;">▶</div></div></div>`;
+        }
+        
+        else if(msg.type === 'file') {
+            // ★ 修复：自适应文档卡片 (无气泡背景) ★
+            let icon = '📄';
+            if(msg.fileName.match(/\.(doc|docx)$/i)) icon='📝';
+            else if(msg.fileName.match(/\.(xls|xlsx)$/i)) icon='📊';
+            html = `<div class="bubble clean">
+                        <a class="doc-card" href="${msg.content}" download="${msg.fileName}">
+                            <div class="doc-icon">${icon}</div>
+                            <div class="doc-info"><div class="doc-name">${msg.fileName}</div><div class="doc-type">CLICK TO SAVE</div></div>
+                        </a>
+                    </div>`;
+        }
+        
+        div.innerHTML = html;
+        box.appendChild(div);
+        box.scrollTop = box.scrollHeight;
+    }
+
+    // ★ 修复：进度条 UI 样式 ★
+    function appendProgressBubble(chatId, fileId, fileName, isSelf) {
+        if(activeChatId !== chatId) return;
+        const box = document.getElementById('messages-container');
+        const div = document.createElement('div'); div.id = `progress-row-${fileId}`; div.className = `msg-row ${isSelf?'self':'other'}`;
+        
+        // 使用 progress-wrapper 包裹
+        div.innerHTML = `
+            <div class="progress-wrapper">
+                <div style="font-weight:bold; margin-bottom:4px; max-width:160px; overflow:hidden; text-overflow:ellipsis;">${isSelf?'⬆':'⬇'} ${fileName || 'Receiving...'}</div>
+                <div class="progress-track"><div id="bar-${fileId}" class="progress-fill"></div></div>
+                <div style="display:flex; justify-content:space-between; margin-top:2px; font-size:10px; opacity:0.8;">
+                    <span id="spd-${fileId}">0 KB/s</span><span id="pct-${fileId}">0%</span>
+                </div>
+                <div class="cancel-btn" onclick="cancelTransfer('${fileId}', ${isSelf})">✕</div>
+            </div>`;
+        box.appendChild(div); box.scrollTop = box.scrollHeight;
+    }
+
+    function updateProgressUI(id, cur, total, spd) {
+        const bar = document.getElementById(`bar-${id}`);
+        if(bar) {
+            const p = Math.floor((cur/total)*100);
+            bar.style.width = `${p}%`;
+            document.getElementById(`pct-${id}`).innerText = `${p}%`;
+            document.getElementById(`spd-${id}`).innerText = `${spd.toFixed(1)} KB/s`;
+        }
+    }
+
+    function replaceProgressWithContent(id, msg) {
+        const row = document.getElementById(`progress-row-${id}`);
+        if(row) { row.remove(); appendMsgDOM(msg); }
+    }
+
+    // --- 交互 ---
+    window.handleAudio = (act, u) => { 
+        if(!globalAudio) globalAudio=new Audio(); 
+        if(act==='play') { globalAudio.src=u; globalAudio.play(); } 
+        else if(act==='pause') globalAudio.pause(); 
+        else { globalAudio.pause(); globalAudio.currentTime=0; } 
+    };
+
+    const handleSend = () => { const t=document.getElementById('chat-input'); if(t.value.trim()){ sendData('text', t.value); t.value=''; }};
+    document.getElementById('chat-send-btn').onclick = handleSend;
+    document.getElementById('chat-input').addEventListener('keypress', e=>{if(e.key==='Enter') handleSend();});
+    
+    // 返回键
+    document.getElementById('chat-back-btn').onclick = () => {
+        if (window.history.state && window.history.state.chat) window.history.back();
         else {
             document.getElementById('view-chat').classList.remove('active');
             setTimeout(() => document.getElementById('view-chat').classList.add('right-sheet'), 300);
             activeChatId = null; renderFriends();
         }
     };
-    document.getElementById('chat-back-btn').onclick = window.goBack;
     window.addEventListener('popstate', () => {
         if(document.getElementById('media-preview-modal').style.display!=='none') { window.closePreview(); return; }
         document.getElementById('view-chat').classList.remove('active');
         setTimeout(() => document.getElementById('view-chat').classList.add('right-sheet'), 300);
         activeChatId = null; renderFriends();
     });
-
-    // 绑定
-    document.getElementById('add-id-btn').onclick = () => { document.getElementById('add-overlay').classList.remove('hidden'); dialInput=""; document.getElementById('dial-display').innerText="____"; };
-    document.getElementById('scan-btn').onclick = () => {
-        document.getElementById('qr-overlay').classList.remove('hidden');
-        setTimeout(()=>{ if(window.Html5Qrcode) { const s=new Html5Qrcode("qr-reader"); window.scanner=s; s.start({facingMode:"environment"}, {fps:10}, t=>{ s.stop().then(()=>{ window.closeAllModals(); handleAddFriend(t); }); }); } }, 300);
-    };
-
-    // 其他功能
-    const handleSend = () => { const t=document.getElementById('chat-input'); if(t.value.trim()){ sendData('text', t.value); t.value=''; }};
-    document.getElementById('chat-send-btn').onclick = handleSend;
-    document.getElementById('chat-input').addEventListener('keypress', e=>{if(e.key==='Enter') handleSend();});
-    
-    document.getElementById('mode-switch-btn').onclick = () => {
-        const t = document.getElementById('text-input-wrapper'); const v = document.getElementById('voice-record-btn'); const b = document.getElementById('mode-switch-btn');
-        if(t.classList.contains('hidden')) { t.classList.remove('hidden'); v.classList.remove('active'); b.innerText="🎤"; } else { t.classList.add('hidden'); v.classList.add('active'); b.innerText="⌨️"; }
-    };
-    const fIn = document.getElementById('chat-file-input'); fIn.setAttribute('multiple','');
-    document.getElementById('file-btn').onclick = () => fIn.click();
-    fIn.onchange = e => { if(e.target.files.length) Array.from(e.target.files).forEach(addToQueue); };
-
-    // 拖拽遍历
-    const drag = document.getElementById('drag-overlay');
-    window.addEventListener('dragenter', () => { if(activeChatId) drag.classList.remove('hidden'); });
-    drag.addEventListener('dragleave', (e) => { if(e.target===drag) drag.classList.add('hidden'); });
-    window.addEventListener('dragover', e=>e.preventDefault());
-    window.addEventListener('drop', e => { 
-        e.preventDefault(); drag.classList.add('hidden');
-        if(activeChatId) {
-            if(e.dataTransfer.items) for(let i=0; i<e.dataTransfer.items.length; i++) traverseFileTree(e.dataTransfer.items[i].webkitGetAsEntry());
-            else if(e.dataTransfer.files.length) Array.from(e.target.files).forEach(addToQueue);
-        }
-    });
-    function traverseFileTree(item) {
-        if (item.isFile) { item.file(file => addToQueue(file)); }
-        else if (item.isDirectory) {
-            const dirReader = item.createReader();
-            dirReader.readEntries(entries => { for (let i=0; i<entries.length; i++) traverseFileTree(entries[i]); });
-        }
-    }
 
     // 录音
     const vBtn = document.getElementById('voice-record-btn');
@@ -474,20 +450,52 @@ document.addEventListener('DOMContentLoaded', () => {
     vBtn.addEventListener('mousedown', startR); vBtn.addEventListener('mouseup', stopR);
     vBtn.addEventListener('touchstart', startR); vBtn.addEventListener('touchend', stopR);
 
-    // 表情
-    function setupStickers() {
-        const g = document.getElementById('sticker-grid'); g.innerHTML = '';
-        const gifs = ["https://media.tenor.com/2nZ2_2s_2zAAAAAi/pepe-frog.gif", "https://media.tenor.com/Xk_Xk_XkAAAAi/pepe-dance.gif", "https://media.tenor.com/8x_8x_8xAAAAi/pepe-sad.gif", "https://media.tenor.com/9y_9y_9yAAAAi/pepe-happy.gif"];
-        gifs.forEach(s => {
-            const i = document.createElement('img'); i.src = s; i.className = 'sticker-item';
-            i.style.cssText = "width:60px;height:60px;object-fit:contain;cursor:pointer;";
-            i.onclick = () => { if(activeChatId) { sendData('sticker', s); document.getElementById('sticker-panel').classList.add('hidden'); } };
-            g.appendChild(i);
-        });
-    }
+    // 文件与拖拽
+    const fIn = document.getElementById('chat-file-input'); fIn.setAttribute('multiple','');
+    document.getElementById('file-btn').onclick = () => fIn.click();
+    fIn.onchange = e => { if(e.target.files.length) Array.from(e.target.files).forEach(addToQueue); };
+    const drag = document.getElementById('drag-overlay');
+    window.addEventListener('dragenter', () => { if(activeChatId) drag.classList.remove('hidden'); });
+    drag.addEventListener('dragleave', (e) => { if(e.target===drag) drag.classList.add('hidden'); });
+    window.addEventListener('dragover', e=>e.preventDefault());
+    window.addEventListener('drop', e => { 
+        e.preventDefault(); drag.classList.add('hidden');
+        if(activeChatId) {
+            if(e.dataTransfer.items) for(let i=0; i<e.dataTransfer.items.length; i++) traverseFileTree(e.dataTransfer.items[i].webkitGetAsEntry());
+            else if(e.dataTransfer.files.length) Array.from(e.target.files).forEach(addToQueue);
+        }
+    });
+
+    document.getElementById('mode-switch-btn').onclick = () => {
+        const t = document.getElementById('text-input-wrapper'); const v = document.getElementById('voice-record-btn'); const b = document.getElementById('mode-switch-btn');
+        if(t.classList.contains('hidden')) { t.classList.remove('hidden'); v.classList.remove('active'); b.innerText="🎤"; } else { t.classList.add('hidden'); v.classList.add('active'); b.innerText="⌨️"; }
+    };
     document.getElementById('sticker-btn').onclick = () => document.getElementById('sticker-panel').classList.toggle('hidden');
 
-    // UI Helpers
+    // 拨号盘
+    let dialInput = "";
+    const setupDialpad = () => {
+        document.querySelector('#add-overlay .modal-body').innerHTML = `<div class="numpad-container"><div id="dial-display" class="id-display-screen">____</div><div class="numpad-grid"><div class="num-btn" onclick="dial(1)">1</div><div class="num-btn" onclick="dial(2)">2</div><div class="num-btn" onclick="dial(3)">3</div><div class="num-btn" onclick="dial(4)">4</div><div class="num-btn" onclick="dial(5)">5</div><div class="num-btn" onclick="dial(6)">6</div><div class="num-btn" onclick="dial(7)">7</div><div class="num-btn" onclick="dial(8)">8</div><div class="num-btn" onclick="dial(9)">9</div><div class="num-btn clear" onclick="dial('C')">C</div><div class="num-btn" onclick="dial(0)">0</div><div class="num-btn connect" onclick="dial('OK')">🤝</div></div></div>`;
+    };
+    window.dial = k => {
+        const d = document.getElementById('dial-display');
+        if(k==='C') { dialInput=""; d.innerText="____"; return; }
+        if(k==='OK') { 
+            if(dialInput.length===4 && dialInput!==MY_ID) { 
+                window.closeAllModals();
+                if(!db.friends.find(f=>f.id===dialInput)) { db.friends.push({id:dialInput, addedAt:Date.now(), alias:`User ${dialInput}`}); saveDB(); renderFriends(); }
+                openChat(dialInput);
+            } else alert("Invalid"); return; 
+        }
+        if(dialInput.length<4) { dialInput+=k; d.innerText=dialInput.padEnd(4,'_'); }
+    };
+    document.getElementById('add-id-btn').onclick = () => { document.getElementById('add-overlay').classList.remove('hidden'); dialInput=""; document.getElementById('dial-display').innerText="____"; };
+    document.getElementById('scan-btn').onclick = () => {
+        document.getElementById('qr-overlay').classList.remove('hidden');
+        setTimeout(()=>{ if(window.Html5Qrcode) { const s=new Html5Qrcode("qr-reader"); window.scanner=s; s.start({facingMode:"environment"}, {fps:10}, t=>{ s.stop().then(()=>{ window.closeAllModals(); handleAddFriend(t); }); }); } }, 300);
+    };
+
+    // Utils
     window.closeAllModals = () => document.querySelectorAll('.modal-overlay').forEach(e=>e.classList.add('hidden'));
     window.cancelTransfer = (id, self) => { if(self) cancelFlag[id]=true; else activeDownloads[id]='cancelled'; document.getElementById(`progress-row-${id}`).innerHTML='<div class="bubble" style="color:red;font-size:12px">🚫 Cancelled</div>'; };
     window.previewMedia = (u,t) => {
@@ -497,34 +505,28 @@ document.addEventListener('DOMContentLoaded', () => {
         m.classList.remove('hidden'); m.style.display='flex';
     };
     window.closePreview = () => document.getElementById('media-preview-modal').classList.add('hidden');
-    window.playVoice = (u,id) => { const a = new Audio(u); a.play(); const b = document.getElementById(id); if(b) { b.classList.add('playing'); a.onended=()=>b.classList.remove('playing'); } };
-    window.handleAudio = (act, u) => { 
-        if(!globalAudio) globalAudio=new Audio(); 
-        if(act==='play') { globalAudio.src=u; globalAudio.play(); } 
-        else if(act==='pause') globalAudio.pause(); 
-        else { globalAudio.pause(); globalAudio.currentTime=0; } 
-    };
+    window.editFriendName = () => { if(activeChatId) { const f=db.friends.find(x=>x.id===activeChatId); const n=prompt("Alias:", f.alias||f.id); if(n){ f.alias=n; saveDB(); document.getElementById('chat-partner-name').innerText=n; renderFriends(); } } };
+    window.editContactAlias = (fid) => { const f=db.friends.find(x=>x.id===fid); if(f) { const n=prompt("Alias:", f.alias||f.id); if(n){ f.alias=n; saveDB(); renderFriends(); } } };
     window.editMyName = () => { const n=prompt("Name", db.profile.nickname); if(n) { db.profile.nickname=n; saveDB(); initUI(); } };
     document.querySelector('.user-pill').onclick = window.editMyName;
-    window.editFriendName = () => { if(activeChatId) { const f=db.friends.find(x=>x.id===activeChatId); const n=prompt("Alias:", f.alias||f.id); if(n){ f.alias=n; saveDB(); document.getElementById('chat-partner-name').innerText=n; renderFriends(); } } };
     document.querySelector('.chat-user-info').onclick = window.editFriendName;
 
-    function appendProgressBubble(chatId, fileId, fileName, isSelf) {
-        if(activeChatId !== chatId) return;
-        const box = document.getElementById('messages-container');
-        const div = document.createElement('div'); div.id = `progress-row-${fileId}`; div.className = `msg-row ${isSelf?'self':'other'}`;
-        div.innerHTML = `<div class="bubble" style="min-width:160px;"><div>${isSelf?'⬆':'⬇'} ${fileName}</div><div style="background:#eee;height:5px;margin:4px 0;"><div id="bar-${fileId}" style="width:0%;height:100%;background:#59BC10;"></div></div><div style="display:flex;justify-content:space-between;font-size:10px;"><span id="spd-${fileId}">0K/s</span><span id="pct-${fileId}">0%</span></div><div class="cancel-btn" onclick="cancelTransfer('${fileId}', ${isSelf})">✕</div></div>`;
-        box.appendChild(div); box.scrollTop = box.scrollHeight;
-    }
-    function updateProgressUI(id, cur, total, spd) {
-        const bar = document.getElementById(`bar-${id}`);
-        if(bar) { const p = Math.floor((cur/total)*100); bar.style.width = `${p}%`; document.getElementById(`pct-${id}`).innerText = `${p}%`; document.getElementById(`spd-${id}`).innerText = `${spd.toFixed(1)} KB/s`; }
-    }
-    function replaceProgressWithContent(id, msg) {
-        const row = document.getElementById(`progress-row-${id}`);
-        if(row) { row.remove(); appendMsgDOM(msg); }
-    }
     function b64toBlob(b,t) { try{ const bin=atob(b); const a=new Uint8Array(bin.length); for(let i=0;i<bin.length;i++) a[i]=bin.charCodeAt(i); return new Blob([a],{type:t}); }catch(e){ return new Blob([],{type:t}); } }
+
+    function handleAddFriend(id) {
+        if(id === MY_ID) return;
+        if(!db.friends.find(f => f.id === id)) { db.friends.push({ id: id, addedAt: Date.now(), alias: `User ${id}`, unread: false }); saveDB(); renderFriends(); }
+        openChat(id);
+    }
+    
+    // 表情
+    const sGrid = document.getElementById('sticker-grid'); sGrid.innerHTML='';
+    const gifs = ["https://media.tenor.com/2nZ2_2s_2zAAAAAi/pepe-frog.gif", "https://media.tenor.com/Xk_Xk_XkAAAAi/pepe-dance.gif", "https://media.tenor.com/8x_8x_8xAAAAi/pepe-sad.gif", "https://media.tenor.com/9y_9y_9yAAAAi/pepe-happy.gif"];
+    gifs.forEach(s=>{
+        const i=document.createElement('img'); i.src=s; i.className='sticker-img'; i.style.cssText="width:60px;height:60px;object-fit:contain;cursor:pointer;";
+        i.onclick=()=>{ if(activeChatId){ sendData('sticker', s); document.getElementById('sticker-panel').classList.add('hidden'); }};
+        sGrid.appendChild(i);
+    });
 
     initUI();
     document.body.addEventListener('click', () => document.getElementById('msg-sound').load(), {once:true});
