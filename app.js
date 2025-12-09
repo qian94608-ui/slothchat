@@ -2,7 +2,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const SERVER_URL = 'https://wojak-backend.onrender.com';
 
-    // --- 0. 样式 (V64基础上微调) ---
+    // --- 0. 样式定义 (保持 V65 的完美布局) ---
     const styleSheet = document.createElement("style");
     styleSheet.innerText = `
         :root { --pepe-green: #59BC10; --pepe-dark: #46960C; --bg: #F2F2F7; --danger: #FF3B30; }
@@ -19,44 +19,6 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         .user-pill { display: flex; align-items: center; gap: 10px; background: #f5f5f5; padding: 5px 10px; border-radius: 20px; cursor: pointer; border: 1px solid #ddd; font-weight: 600; font-size: 14px; }
         .header-avatar { width: 32px; height: 32px; border-radius: 50%; background: #fff; object-fit: contain; border: 1px solid #eee; }
-
-        /* 底部输入栏 */
-        .chat-footer { 
-            position: fixed; bottom: 0; left: 0; width: 100%; height: 70px; 
-            background: #fff; display: flex; align-items: center; padding: 0 8px; 
-            border-top: 1px solid #eee; z-index: 999; box-sizing: border-box; gap: 5px;
-        }
-        .footer-tool, #sticker-btn, #file-btn, #mode-switch-btn { 
-            width: 42px; height: 42px; border-radius: 50%; background: #f2f2f2; 
-            border: 1px solid #ddd; font-size: 20px; flex-shrink: 0; 
-            display: flex; justify-content: center; align-items: center; cursor: pointer; color: #555;
-        }
-
-        .input-zone { flex: 1; position: relative; height: 42px; display: flex; align-items: center; min-width: 0; }
-        
-        #chat-input { 
-            width: 100%; height: 100%; border-radius: 20px; background: #f9f9f9; 
-            border: 1px solid #ddd; padding: 0 15px; outline: none; font-size: 16px; color: #000;
-        }
-        
-        #chat-send-btn { 
-            width: 44px; height: 42px; border-radius: 20px; background: var(--pepe-green); 
-            color: #fff; border: none; font-weight: bold; flex-shrink: 0; cursor: pointer;
-            font-size: 16px; display: flex; justify-content: center; align-items: center;
-            z-index: 1000; box-shadow: 0 2px 5px rgba(89, 188, 16, 0.3);
-        }
-        #chat-send-btn:active { transform: scale(0.95); opacity: 0.9; }
-
-        #voice-bar {
-            position: absolute; top: 0; left: 0; width: 100%; height: 100%; 
-            border-radius: 20px; background: var(--danger); color: #fff; 
-            font-weight: bold; font-size: 14px; display: none; 
-            justify-content: center; align-items: center; z-index: 10; cursor: pointer;
-        }
-        #voice-bar.active { display: flex !important; }
-        #voice-bar.recording { animation: pulse 1s infinite; background: #cc0000; }
-
-        .hidden { display: none !important; }
 
         /* 聊天视图 (物理隔离) */
         #view-chat {
@@ -75,6 +37,52 @@ document.addEventListener('DOMContentLoaded', () => {
             display: flex; flex-direction: column; gap: 12px;
         }
 
+        /* 底部输入栏 */
+        .chat-footer { 
+            height: 70px; flex-shrink: 0; background: #fff; 
+            display: flex; align-items: center; padding: 0 8px; 
+            border-top: 1px solid #eee; gap: 5px;
+        }
+        .footer-tool, #sticker-btn, #file-btn, #mode-switch-btn { 
+            width: 42px; height: 42px; border-radius: 50%; background: #f2f2f2; 
+            border: 1px solid #ddd; font-size: 20px; flex-shrink: 0; 
+            display: flex; justify-content: center; align-items: center; cursor: pointer; color: #555;
+        }
+        .input-zone { flex: 1; position: relative; height: 42px; display: flex; align-items: center; min-width: 0; }
+        
+        #chat-input { 
+            width: 100%; height: 100%; border-radius: 20px; background: #f9f9f9; 
+            border: 1px solid #ddd; padding: 0 15px; outline: none; font-size: 16px; color: #000;
+        }
+        
+        #chat-send-btn { 
+            width: 44px; height: 42px; border-radius: 20px; background: var(--pepe-green); 
+            color: #fff; border: none; font-weight: bold; flex-shrink: 0; cursor: pointer;
+            font-size: 16px; display: flex; justify-content: center; align-items: center;
+            z-index: 1000; box-shadow: 0 2px 5px rgba(89, 188, 16, 0.3);
+        }
+        #chat-send-btn:active { transform: scale(0.95); opacity: 0.9; }
+
+        /* 语音长按条 (ID: voice-bar) */
+        #voice-bar {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%; 
+            border-radius: 20px; background: var(--danger); color: #fff; 
+            font-weight: bold; font-size: 14px; display: none; 
+            justify-content: center; align-items: center; z-index: 10; cursor: pointer;
+        }
+        #voice-bar.active { display: flex !important; }
+        #voice-bar.recording { animation: pulse 1s infinite; background: #cc0000; }
+
+        .hidden { display: none !important; }
+
+        /* 列表项 */
+        .k-list-item { 
+            background: #fff; border-radius: 12px; padding: 12px; margin-bottom: 10px; 
+            box-shadow: 0 1px 3px rgba(0,0,0,0.05); border: 1px solid #f0f0f0; position: relative; 
+            cursor: pointer; z-index: 1; 
+        }
+        .k-list-item:active { background: #f5f5f5; }
+
         /* 气泡 */
         .msg-row { display: flex; width: 100%; }
         .msg-row.self { justify-content: flex-end; } 
@@ -84,7 +92,7 @@ document.addEventListener('DOMContentLoaded', () => {
         .msg-row.other .bubble { background: #fff; color: #000; border: 1px solid #eee; border-bottom-left-radius: 4px; }
         .bubble.clean { background: transparent !important; padding: 0 !important; box-shadow: none !important; border: none !important; }
 
-        /* 语音消息 (Telegram 风格) */
+        /* 语音/文件卡片 */
         .voice-bubble { display: flex; align-items: center; gap: 10px; min-width: 160px; padding: 5px 0; }
         .voice-play-btn { width: 32px; height: 32px; border-radius: 50%; background: rgba(255,255,255,0.2); border: 1px solid rgba(255,255,255,0.3); display: flex; justify-content: center; align-items: center; cursor: pointer; color: inherit; }
         .msg-row.other .voice-play-btn { background: #f0f0f0; border-color: #ddd; color: var(--pepe-green); }
@@ -93,18 +101,17 @@ document.addEventListener('DOMContentLoaded', () => {
         .voice-progress { height: 100%; width: 0%; background: #fff; transition: width 0.2s; }
         .msg-row.other .voice-progress { background: var(--pepe-green); }
 
-        /* 文件/音频卡片 */
         .file-card { display: flex; align-items: center; gap: 12px; background: #fff; padding: 12px; border-radius: 12px; text-decoration: none; color: #333 !important; border: 1px solid #eee; width: 220px; box-sizing: border-box; box-shadow: 0 2px 5px rgba(0,0,0,0.05); cursor: pointer; }
         .file-icon { font-size: 24px; flex-shrink: 0; }
         .file-info { flex: 1; overflow: hidden; }
         .file-name { font-weight: bold; font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: #333; }
         .file-type { font-size: 10px; color: #999; font-weight: 700; margin-top: 2px; }
-
+        
         .thumb-img { max-width: 200px; border-radius: 12px; display: block; }
         .sticker-img { width: 100px; height: 100px; object-fit: contain; cursor: pointer; }
 
-        /* 拨号盘 (强制样式) */
-        .modal-overlay { z-index: 1000000 !important; background: rgba(0,0,0,0.85); }
+        /* 拨号盘 */
+        .modal-overlay { z-index: 1000000 !important; background: rgba(0,0,0,0.9); }
         .numpad-container { padding: 20px; text-align: center; background: #fff; border-radius: 20px; }
         .id-display-screen { font-size: 40px; color: var(--pepe-green); border-bottom: 3px solid #eee; margin-bottom: 20px; font-weight: 900; letter-spacing: 6px; height: 60px; line-height: 60px; }
         .numpad-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 15px; }
@@ -117,6 +124,7 @@ document.addEventListener('DOMContentLoaded', () => {
         .drag-overlay { display: none; z-index: 99999; } .drag-overlay.active { display: flex; }
         @keyframes pulse { 0%{transform:scale(1);} 50%{transform:scale(1.02);} }
         .shake-active { animation: shake 0.5s infinite; border-left: 4px solid var(--danger); }
+        @keyframes shake { 0%,100%{transform:translateX(0);} 25%{transform:translateX(-3px);} 75%{transform:translateX(3px);} }
     `;
     document.head.appendChild(styleSheet);
 
@@ -124,12 +132,11 @@ document.addEventListener('DOMContentLoaded', () => {
     document.body.insertAdjacentHTML('beforeend', previewHTML);
 
     // --- 1. 数据 ---
-    const DB_KEY = 'pepe_v65_handshake_fix';
+    const DB_KEY = 'pepe_v66_fixed_id';
     const CHUNK_SIZE = 12 * 1024;
     let db, socket, activeChatId;
     let activeDownloads = {}, isSending = false, cancelFlag = {}, uploadQueue = [], globalAudio = null;
-    let isVoiceMode = false;
-    let dialInput = ""; // 拨号状态
+    let isVoiceMode = false, dialInput = "";
 
     try {
         db = JSON.parse(localStorage.getItem(DB_KEY));
@@ -153,9 +160,7 @@ document.addEventListener('DOMContentLoaded', () => {
         renderFriends();
         setupStickers();
         renderInputZone();
-        
-        // ★ 核心：初始化时注入 HTML ★
-        setupDialpadHTML();
+        setupDialpadHTML(); // 强制注入拨号盘
 
         setTimeout(() => {
             const q = document.getElementById("qrcode");
@@ -163,7 +168,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }, 500);
     };
 
-    // --- 3. 拨号盘逻辑 (★ 核心修复：握手跳转 ★) ---
+    // --- 3. 拨号盘 (强制注入) ---
     function setupDialpadHTML() {
         const body = document.querySelector('#add-overlay .modal-body');
         if(body) {
@@ -171,12 +176,18 @@ document.addEventListener('DOMContentLoaded', () => {
                 <div class="numpad-container">
                     <div id="dial-display" class="id-display-screen">____</div>
                     <div class="numpad-grid">
-                        <div class="num-btn" onclick="dial(1)">1</div><div class="num-btn" onclick="dial(2)">2</div><div class="num-btn" onclick="dial(3)">3</div>
-                        <div class="num-btn" onclick="dial(4)">4</div><div class="num-btn" onclick="dial(5)">5</div><div class="num-btn" onclick="dial(6)">6</div>
-                        <div class="num-btn" onclick="dial(7)">7</div><div class="num-btn" onclick="dial(8)">8</div><div class="num-btn" onclick="dial(9)">9</div>
-                        <div class="num-btn clear" onclick="dial('C')" style="color:var(--danger)">C</div>
-                        <div class="num-btn" onclick="dial(0)">0</div>
-                        <div class="num-btn connect" onclick="dial('OK')">🤝</div>
+                        <div class="num-btn" onclick="dial(1)" ontouchstart="dial(1)">1</div>
+                        <div class="num-btn" onclick="dial(2)" ontouchstart="dial(2)">2</div>
+                        <div class="num-btn" onclick="dial(3)" ontouchstart="dial(3)">3</div>
+                        <div class="num-btn" onclick="dial(4)" ontouchstart="dial(4)">4</div>
+                        <div class="num-btn" onclick="dial(5)" ontouchstart="dial(5)">5</div>
+                        <div class="num-btn" onclick="dial(6)" ontouchstart="dial(6)">6</div>
+                        <div class="num-btn" onclick="dial(7)" ontouchstart="dial(7)">7</div>
+                        <div class="num-btn" onclick="dial(8)" ontouchstart="dial(8)">8</div>
+                        <div class="num-btn" onclick="dial(9)" ontouchstart="dial(9)">9</div>
+                        <div class="num-btn clear" onclick="dial('C')" ontouchstart="dial('C')" style="color:var(--danger)">C</div>
+                        <div class="num-btn" onclick="dial(0)" ontouchstart="dial(0)">0</div>
+                        <div class="num-btn connect" onclick="dial('OK')" ontouchstart="dial('OK')">🤝</div>
                     </div>
                 </div>`;
         }
@@ -189,36 +200,33 @@ document.addEventListener('DOMContentLoaded', () => {
 
         if(k === 'C') { dialInput = ""; d.innerText = "____"; return; }
         
-        // ★ 握手核心逻辑 (顺序不能乱) ★
+        // ★ 核心修复：握手跳转逻辑 ★
         if(k === 'OK') { 
             const inputStr = String(dialInput);
             if(inputStr.length === 4) {
                 if(inputStr === MY_ID) { alert("No Self-Chat"); return; }
-                
-                // 1. 锁死目标ID
                 const target = inputStr;
                 
-                // 2. 存入好友 (如果不存在)
+                // 1. 先加好友
                 if(!db.friends.find(f=>f.id===target)) { 
                     db.friends.push({id:target, addedAt:Date.now(), alias:`User ${target}`, unread:false}); 
                     saveDB(); 
                     renderFriends(); 
                 }
                 
-                // 3. 强制关闭所有模态框
+                // 2. 关弹窗
                 window.closeAllModals();
                 
-                // 4. 强制跳转聊天 (微延时保证DOM就绪)
+                // 3. 强制跳转
                 setTimeout(() => openChat(target), 50);
                 
-                // 5. 重置输入
+                // 4. 重置
                 dialInput = ""; 
                 d.innerText = "____";
             } else { alert("Enter 4 Digits"); }
             return; 
         }
         
-        // 输入数字
         if(String(dialInput).length < 4) {
             dialInput += k;
             d.innerText = String(dialInput).padEnd(4,'_');
@@ -230,9 +238,8 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('add-id-btn').onclick = () => {
         document.getElementById('add-overlay').classList.remove('hidden');
         dialInput = "";
+        setupDialpadHTML(); // 再次确保注入
         const d = document.getElementById('dial-display'); if(d) d.innerText = "____";
-        // 双重保险：再次注入
-        setupDialpadHTML();
     };
 
     // --- 4. 底部栏渲染 ---
@@ -252,7 +259,6 @@ document.addEventListener('DOMContentLoaded', () => {
             sendBtn.style.display = 'flex';
             voiceBar.classList.remove('active');
             modeBtn.innerText = '🎤';
-            if(activeChatId && !/Android|iPhone/i.test(navigator.userAgent)) setTimeout(() => input.focus(), 100);
         }
     }
 
@@ -295,7 +301,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function handleTunnelPacket(p, fid, friend) {
-        const safeName = p.fileName || "File";
+        const safeName = p.fileName || "File_" + Date.now();
         if(p.subType === 'chunk') {
             if(activeDownloads[p.fileId] === 'cancelled') return;
             if(!activeDownloads[p.fileId]) {
@@ -343,9 +349,11 @@ document.addEventListener('DOMContentLoaded', () => {
     function sendFileChunked(file, isVoice) {
         if(!activeChatId || !socket.connected) { alert("Net Error"); return; }
         isSending = true;
+        
         const fileId = Date.now() + '-' + Math.random().toString(36).substr(2,9);
         const sendName = file.name || `file_${Date.now()}`;
         const total = file.size;
+        
         cancelFlag[fileId] = false;
         appendProgressBubble(activeChatId, fileId, sendName, true);
         
@@ -398,25 +406,22 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // --- 7. 界面交互 ---
-    
-    // 发送
     const handleSend = (e) => {
         if(e) e.preventDefault();
         const t = document.getElementById('chat-input');
         if(t && t.value.trim()){ sendData('text', t.value); t.value=''; t.focus(); }
     };
-    const sBtn = document.getElementById('chat-send-btn');
-    sBtn.onclick = handleSend; sBtn.ontouchstart = handleSend;
+    document.getElementById('chat-send-btn').onclick = handleSend;
     document.getElementById('chat-input').addEventListener('keydown', e=>{if(e.key==='Enter') handleSend();});
 
-    // 返回
+    // 返回键 (History API)
     window.goBack = () => {
         if(history.state && history.state.chat) history.back();
         else closeChatUI();
     };
     function closeChatUI() {
         const view = document.getElementById('view-chat');
-        view.classList.remove('active'); // Slide out
+        view.classList.remove('active');
         activeChatId = null; 
         renderFriends();
     }
@@ -428,6 +433,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     document.getElementById('mode-switch-btn').onclick = () => { isVoiceMode = !isVoiceMode; renderInputZone(); };
 
+    // ★ 核心修复：OpenChat 正确引用 voice-bar ★
     function openChat(id) {
         try{ if(window.speechSynthesis) window.speechSynthesis.cancel(); }catch(e){}
         activeChatId = id;
@@ -437,7 +443,7 @@ document.addEventListener('DOMContentLoaded', () => {
         isVoiceMode = false; renderInputZone();
         
         const view = document.getElementById('view-chat');
-        view.classList.add('active'); // Slide in
+        view.classList.add('active');
         window.history.pushState({ chat: true }, "");
         
         const box = document.getElementById('messages-container');
@@ -462,7 +468,7 @@ document.addEventListener('DOMContentLoaded', () => {
                             <div class="voice-play-btn" onclick="handleAudio('toggle', '${msg.content}', 'icon-${uid}')">
                                 <span id="icon-${uid}">▶</span>
                             </div>
-                            <div class="voice-track"><div class="voice-progress" id="prog-${uid}"></div></div>
+                            <div class="voice-track"><div class="voice-progress"></div></div>
                             <a href="${msg.content}" download="voice.wav" style="text-decoration:none;color:inherit;font-size:12px;opacity:0.7">⬇</a>
                         </div>
                     </div>`;
@@ -535,8 +541,11 @@ document.addEventListener('DOMContentLoaded', () => {
     const startR = async(e)=>{ e.preventDefault(); try { const s = await navigator.mediaDevices.getUserMedia({audio:true}); let mime = MediaRecorder.isTypeSupported('audio/mp4')?'audio/mp4':'audio/webm'; rec = new MediaRecorder(s, {mimeType:mime}); chunks=[]; rec.ondataavailable = e => { if(e.data.size>0) chunks.push(e.data); }; rec.onstop = () => { const b = new Blob(chunks, {type:mime}); const f = new File([b], "voice.wav", {type:mime}); addToQueue(f, true); s.getTracks().forEach(t=>t.stop()); }; rec.start(); document.getElementById('voice-bar').innerText="RECORDING..."; document.getElementById('voice-bar').classList.add('recording'); } catch(e){alert("Mic Error");} };
     const stopR = (e)=>{ e.preventDefault(); if(rec&&rec.state!=='inactive'){ rec.stop(); document.getElementById('voice-bar').innerText="HOLD TO SPEAK"; document.getElementById('voice-bar').classList.remove('recording'); } };
     
-    const vb = document.getElementById('voice-bar');
-    if(vb){ vb.addEventListener('mousedown', startR); vb.addEventListener('mouseup', stopR); vb.addEventListener('touchstart', startR); vb.addEventListener('touchend', stopR); }
+    // Bind Voice Dynamically
+    document.addEventListener('mousedown', e => { if(e.target.id === 'voice-bar') startR(e); });
+    document.addEventListener('mouseup', e => { if(e.target.id === 'voice-bar') stopR(e); });
+    document.addEventListener('touchstart', e => { if(e.target.id === 'voice-bar') startR(e); });
+    document.addEventListener('touchend', e => { if(e.target.id === 'voice-bar') stopR(e); });
 
     window.closeAllModals = () => document.querySelectorAll('.modal-overlay').forEach(e=>e.classList.add('hidden'));
     window.cancelTransfer = (id, self) => { if(self) cancelFlag[id]=true; else activeDownloads[id]='cancelled'; document.getElementById(`progress-row-${id}`).innerHTML='<div class="bubble clean" style="color:red;font-size:12px">🚫 Cancelled</div>'; };
@@ -564,6 +573,17 @@ document.addEventListener('DOMContentLoaded', () => {
     window.editFriendName = () => { if(activeChatId) { const f=db.friends.find(x=>x.id===activeChatId); const n=prompt("Alias:", f.alias||f.id); if(n){ f.alias=n; saveDB(); document.getElementById('chat-partner-name').innerText=n; renderFriends(); } } };
     window.editContactAlias = (fid) => { const f=db.friends.find(x=>x.id===fid); if(f) { const n=prompt("Alias:", f.alias||f.id); if(n){ f.alias=n; saveDB(); renderFriends(); } } };
     document.querySelector('.chat-user-info').onclick = window.editFriendName;
+
+    function renderFriends() {
+        const list = document.getElementById('friends-list-container'); list.innerHTML='';
+        db.friends.forEach(f => {
+            const div = document.createElement('div'); div.className=`k-list-item ${f.unread?'shake-active':''}`;
+            const statusHtml = f.unread ? `<div class="marquee-text">📢 MESSAGE COMING...</div>` : `<div style="font-size:12px;color:#999;">Tap to chat</div>`;
+            div.innerHTML = `<div style="display:flex;align-items:center;gap:10px;"><img src="https://api.dicebear.com/7.x/notionists/svg?seed=${f.id}" style="width:45px;border-radius:10px;"><div style="flex:1;"><div style="font-weight:800;">${f.alias||f.id}</div>${statusHtml}</div><div class="list-edit-btn" onclick="event.stopPropagation();window.editContactAlias('${f.id}')">✎</div></div>`;
+            div.onclick = () => openChat(f.id);
+            list.appendChild(div);
+        });
+    }
 
     initUI();
     document.body.addEventListener('click', () => document.getElementById('msg-sound').load(), {once:true});
