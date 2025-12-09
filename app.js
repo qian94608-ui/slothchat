@@ -2,12 +2,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const SERVER_URL = 'https://wojak-backend.onrender.com';
 
-    // --- 0. 样式定义 (保持 V65 的完美布局) ---
+    // --- 0. 样式 (V66 基础 + 修复) ---
     const styleSheet = document.createElement("style");
     styleSheet.innerText = `
         :root { --pepe-green: #59BC10; --pepe-dark: #46960C; --bg: #F2F2F7; --danger: #FF3B30; }
         body { background: var(--bg); font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; -webkit-tap-highlight-color: transparent; overscroll-behavior-y: none; }
-        
         .defi-nav { display: none !important; }
         .scroll-content { padding-bottom: 100px !important; }
 
@@ -41,13 +40,15 @@ document.addEventListener('DOMContentLoaded', () => {
         .chat-footer { 
             height: 70px; flex-shrink: 0; background: #fff; 
             display: flex; align-items: center; padding: 0 8px; 
-            border-top: 1px solid #eee; gap: 5px;
+            border-top: 1px solid #eee; z-index: 999; box-sizing: border-box; gap: 5px;
         }
         .footer-tool, #sticker-btn, #file-btn, #mode-switch-btn { 
             width: 42px; height: 42px; border-radius: 50%; background: #f2f2f2; 
             border: 1px solid #ddd; font-size: 20px; flex-shrink: 0; 
             display: flex; justify-content: center; align-items: center; cursor: pointer; color: #555;
         }
+        
+        /* 中间输入区 */
         .input-zone { flex: 1; position: relative; height: 42px; display: flex; align-items: center; min-width: 0; }
         
         #chat-input { 
@@ -63,7 +64,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         #chat-send-btn:active { transform: scale(0.95); opacity: 0.9; }
 
-        /* 语音长按条 (ID: voice-bar) */
+        /* 语音条 */
         #voice-bar {
             position: absolute; top: 0; left: 0; width: 100%; height: 100%; 
             border-radius: 20px; background: var(--danger); color: #fff; 
@@ -75,13 +76,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
         .hidden { display: none !important; }
 
-        /* 列表项 */
+        /* 列表项 (高亮可点) */
         .k-list-item { 
             background: #fff; border-radius: 12px; padding: 12px; margin-bottom: 10px; 
             box-shadow: 0 1px 3px rgba(0,0,0,0.05); border: 1px solid #f0f0f0; position: relative; 
-            cursor: pointer; z-index: 1; 
+            cursor: pointer; z-index: 10; /* 确保层级 */
         }
-        .k-list-item:active { background: #f5f5f5; }
+        .k-list-item:active { background: #f5f5f5; transform: scale(0.98); }
 
         /* 气泡 */
         .msg-row { display: flex; width: 100%; }
@@ -92,7 +93,7 @@ document.addEventListener('DOMContentLoaded', () => {
         .msg-row.other .bubble { background: #fff; color: #000; border: 1px solid #eee; border-bottom-left-radius: 4px; }
         .bubble.clean { background: transparent !important; padding: 0 !important; box-shadow: none !important; border: none !important; }
 
-        /* 语音/文件卡片 */
+        /* 语音消息 */
         .voice-bubble { display: flex; align-items: center; gap: 10px; min-width: 160px; padding: 5px 0; }
         .voice-play-btn { width: 32px; height: 32px; border-radius: 50%; background: rgba(255,255,255,0.2); border: 1px solid rgba(255,255,255,0.3); display: flex; justify-content: center; align-items: center; cursor: pointer; color: inherit; }
         .msg-row.other .voice-play-btn { background: #f0f0f0; border-color: #ddd; color: var(--pepe-green); }
@@ -101,6 +102,7 @@ document.addEventListener('DOMContentLoaded', () => {
         .voice-progress { height: 100%; width: 0%; background: #fff; transition: width 0.2s; }
         .msg-row.other .voice-progress { background: var(--pepe-green); }
 
+        /* 文件卡片 */
         .file-card { display: flex; align-items: center; gap: 12px; background: #fff; padding: 12px; border-radius: 12px; text-decoration: none; color: #333 !important; border: 1px solid #eee; width: 220px; box-sizing: border-box; box-shadow: 0 2px 5px rgba(0,0,0,0.05); cursor: pointer; }
         .file-icon { font-size: 24px; flex-shrink: 0; }
         .file-info { flex: 1; overflow: hidden; }
@@ -111,7 +113,7 @@ document.addEventListener('DOMContentLoaded', () => {
         .sticker-img { width: 100px; height: 100px; object-fit: contain; cursor: pointer; }
 
         /* 拨号盘 */
-        .modal-overlay { z-index: 1000000 !important; background: rgba(0,0,0,0.9); }
+        .modal-overlay { z-index: 1000000 !important; background: rgba(0,0,0,0.85); }
         .numpad-container { padding: 20px; text-align: center; background: #fff; border-radius: 20px; }
         .id-display-screen { font-size: 40px; color: var(--pepe-green); border-bottom: 3px solid #eee; margin-bottom: 20px; font-weight: 900; letter-spacing: 6px; height: 60px; line-height: 60px; }
         .numpad-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 15px; }
@@ -124,7 +126,6 @@ document.addEventListener('DOMContentLoaded', () => {
         .drag-overlay { display: none; z-index: 99999; } .drag-overlay.active { display: flex; }
         @keyframes pulse { 0%{transform:scale(1);} 50%{transform:scale(1.02);} }
         .shake-active { animation: shake 0.5s infinite; border-left: 4px solid var(--danger); }
-        @keyframes shake { 0%,100%{transform:translateX(0);} 25%{transform:translateX(-3px);} 75%{transform:translateX(3px);} }
     `;
     document.head.appendChild(styleSheet);
 
@@ -132,7 +133,7 @@ document.addEventListener('DOMContentLoaded', () => {
     document.body.insertAdjacentHTML('beforeend', previewHTML);
 
     // --- 1. 数据 ---
-    const DB_KEY = 'pepe_v66_fixed_id';
+    const DB_KEY = 'pepe_v67_fix_everything';
     const CHUNK_SIZE = 12 * 1024;
     let db, socket, activeChatId;
     let activeDownloads = {}, isSending = false, cancelFlag = {}, uploadQueue = [], globalAudio = null;
@@ -152,21 +153,34 @@ document.addEventListener('DOMContentLoaded', () => {
     const initUI = () => {
         document.getElementById('my-id-display').innerText = MY_ID;
         document.getElementById('my-nickname').innerText = db.profile.nickname;
-        
         const avatar = document.getElementById('my-avatar');
         avatar.src = './icon.png';
         avatar.onerror = () => { avatar.src = `https://api.dicebear.com/7.x/notionists/svg?seed=${db.profile.avatarSeed}`; };
 
+        // ★ 核心修复：先构建底部栏 HTML，再渲染 ★
+        setupFooterHTML();
+        setupDialpadHTML();
+        
         renderFriends();
         setupStickers();
-        renderInputZone();
-        setupDialpadHTML(); // 强制注入拨号盘
+        renderInputZone(); // 更新显示状态
 
         setTimeout(() => {
             const q = document.getElementById("qrcode");
             if(q && window.QRCode) { q.innerHTML=''; new QRCode(q, {text:MY_ID, width:60, height:60, colorDark:"#59BC10", colorLight:"#FFFFFF"}); }
         }, 500);
     };
+
+    // ★ 核心修复：强制注入底部栏，防止 ID 丢失 ★
+    function setupFooterHTML() {
+        const inputZone = document.querySelector('.input-zone');
+        if (inputZone) {
+            inputZone.innerHTML = `
+                <input type="text" id="chat-input" placeholder="Type message..." />
+                <div id="voice-bar">HOLD TO SPEAK</div>
+            `;
+        }
+    }
 
     // --- 3. 拨号盘 (强制注入) ---
     function setupDialpadHTML() {
@@ -176,57 +190,37 @@ document.addEventListener('DOMContentLoaded', () => {
                 <div class="numpad-container">
                     <div id="dial-display" class="id-display-screen">____</div>
                     <div class="numpad-grid">
-                        <div class="num-btn" onclick="dial(1)" ontouchstart="dial(1)">1</div>
-                        <div class="num-btn" onclick="dial(2)" ontouchstart="dial(2)">2</div>
-                        <div class="num-btn" onclick="dial(3)" ontouchstart="dial(3)">3</div>
-                        <div class="num-btn" onclick="dial(4)" ontouchstart="dial(4)">4</div>
-                        <div class="num-btn" onclick="dial(5)" ontouchstart="dial(5)">5</div>
-                        <div class="num-btn" onclick="dial(6)" ontouchstart="dial(6)">6</div>
-                        <div class="num-btn" onclick="dial(7)" ontouchstart="dial(7)">7</div>
-                        <div class="num-btn" onclick="dial(8)" ontouchstart="dial(8)">8</div>
-                        <div class="num-btn" onclick="dial(9)" ontouchstart="dial(9)">9</div>
-                        <div class="num-btn clear" onclick="dial('C')" ontouchstart="dial('C')" style="color:var(--danger)">C</div>
-                        <div class="num-btn" onclick="dial(0)" ontouchstart="dial(0)">0</div>
-                        <div class="num-btn connect" onclick="dial('OK')" ontouchstart="dial('OK')">🤝</div>
+                        <div class="num-btn" onclick="dial(1)">1</div><div class="num-btn" onclick="dial(2)">2</div><div class="num-btn" onclick="dial(3)">3</div>
+                        <div class="num-btn" onclick="dial(4)">4</div><div class="num-btn" onclick="dial(5)">5</div><div class="num-btn" onclick="dial(6)">6</div>
+                        <div class="num-btn" onclick="dial(7)">7</div><div class="num-btn" onclick="dial(8)">8</div><div class="num-btn" onclick="dial(9)">9</div>
+                        <div class="num-btn clear" onclick="dial('C')" style="color:var(--danger)">C</div>
+                        <div class="num-btn" onclick="dial(0)">0</div>
+                        <div class="num-btn connect" onclick="dial('OK')">🤝</div>
                     </div>
                 </div>`;
         }
     }
 
-    // 全局 dial 函数
     window.dial = (k) => {
         const d = document.getElementById('dial-display');
         if(!d) return;
-
         if(k === 'C') { dialInput = ""; d.innerText = "____"; return; }
-        
-        // ★ 核心修复：握手跳转逻辑 ★
         if(k === 'OK') { 
             const inputStr = String(dialInput);
             if(inputStr.length === 4) {
                 if(inputStr === MY_ID) { alert("No Self-Chat"); return; }
                 const target = inputStr;
-                
-                // 1. 先加好友
                 if(!db.friends.find(f=>f.id===target)) { 
                     db.friends.push({id:target, addedAt:Date.now(), alias:`User ${target}`, unread:false}); 
                     saveDB(); 
                     renderFriends(); 
                 }
-                
-                // 2. 关弹窗
                 window.closeAllModals();
-                
-                // 3. 强制跳转
                 setTimeout(() => openChat(target), 50);
-                
-                // 4. 重置
-                dialInput = ""; 
-                d.innerText = "____";
-            } else { alert("Enter 4 Digits"); }
+                dialInput = ""; d.innerText = "____";
+            } else alert("Enter 4 Digits");
             return; 
         }
-        
         if(String(dialInput).length < 4) {
             dialInput += k;
             d.innerText = String(dialInput).padEnd(4,'_');
@@ -234,11 +228,10 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     };
 
-    // 绑定入口
     document.getElementById('add-id-btn').onclick = () => {
         document.getElementById('add-overlay').classList.remove('hidden');
         dialInput = "";
-        setupDialpadHTML(); // 再次确保注入
+        setupDialpadHTML();
         const d = document.getElementById('dial-display'); if(d) d.innerText = "____";
     };
 
@@ -248,6 +241,8 @@ document.addEventListener('DOMContentLoaded', () => {
         const sendBtn = document.getElementById('chat-send-btn');
         const voiceBar = document.getElementById('voice-bar');
         const modeBtn = document.getElementById('mode-switch-btn');
+
+        if (!input || !voiceBar) return; // 防御
 
         if (isVoiceMode) {
             input.style.display = 'none';
@@ -349,11 +344,9 @@ document.addEventListener('DOMContentLoaded', () => {
     function sendFileChunked(file, isVoice) {
         if(!activeChatId || !socket.connected) { alert("Net Error"); return; }
         isSending = true;
-        
         const fileId = Date.now() + '-' + Math.random().toString(36).substr(2,9);
         const sendName = file.name || `file_${Date.now()}`;
         const total = file.size;
-        
         cancelFlag[fileId] = false;
         appendProgressBubble(activeChatId, fileId, sendName, true);
         
@@ -381,7 +374,11 @@ document.addEventListener('DOMContentLoaded', () => {
                 const b64 = e.target.result.split(',')[1];
                 socket.emit('send_private', {
                     targetId: activeChatId, type: 'tunnel_file_packet',
-                    content: JSON.stringify({ subType: 'chunk', fileId, data: b64, fileName: sendName, fileType: file.type, totalSize: total, isVoice: isVoice })
+                    content: JSON.stringify({
+                        subType: 'chunk', fileId, data: b64,
+                        fileName: sendName, fileType: file.type, totalSize: total,
+                        isVoice: isVoice
+                    })
                 });
                 offset += chunk.size;
                 const now = Date.now();
@@ -412,9 +409,13 @@ document.addEventListener('DOMContentLoaded', () => {
         if(t && t.value.trim()){ sendData('text', t.value); t.value=''; t.focus(); }
     };
     document.getElementById('chat-send-btn').onclick = handleSend;
-    document.getElementById('chat-input').addEventListener('keydown', e=>{if(e.key==='Enter') handleSend();});
+    // 动态绑定的输入框，需要事件委托
+    document.addEventListener('keydown', e => {
+        if(e.target.id === 'chat-input' && e.key === 'Enter') {
+            e.preventDefault(); handleSend();
+        }
+    });
 
-    // 返回键 (History API)
     window.goBack = () => {
         if(history.state && history.state.chat) history.back();
         else closeChatUI();
@@ -422,8 +423,7 @@ document.addEventListener('DOMContentLoaded', () => {
     function closeChatUI() {
         const view = document.getElementById('view-chat');
         view.classList.remove('active');
-        activeChatId = null; 
-        renderFriends();
+        activeChatId = null; renderFriends();
     }
     document.getElementById('chat-back-btn').onclick = window.goBack;
     window.addEventListener('popstate', () => {
@@ -433,7 +433,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     document.getElementById('mode-switch-btn').onclick = () => { isVoiceMode = !isVoiceMode; renderInputZone(); };
 
-    // ★ 核心修复：OpenChat 正确引用 voice-bar ★
+    // ★ 核心修复：防止 voice-bar ID 缺失 ★
     function openChat(id) {
         try{ if(window.speechSynthesis) window.speechSynthesis.cancel(); }catch(e){}
         activeChatId = id;
@@ -473,7 +473,6 @@ document.addEventListener('DOMContentLoaded', () => {
                         </div>
                     </div>`;
         } 
-        
         else if(msg.type === 'image') html = `<div class="bubble clean"><div class="thumb-box" onclick="previewMedia('${msg.content}','image')"><img src="${msg.content}" class="thumb-img"></div></div>`;
         else if(msg.type === 'video') html = `<div class="bubble clean"><div class="thumb-box" onclick="previewMedia('${msg.content}','video')"><video src="${msg.content}#t=0.1" class="thumb-img" preload="metadata" muted></video><div style="position:absolute;top:40%;left:45%;color:#fff;font-size:24px;">▶</div></div></div>`;
         
@@ -534,18 +533,34 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     document.getElementById('sticker-btn').onclick = () => document.getElementById('sticker-panel').classList.toggle('hidden');
 
-    const vBtn = document.getElementById('voice-bar');
+    // 录音逻辑 (绑定到 document body 代理，因为 voice-bar 是动态插入的)
     let rec, chunks;
     const reqPerms = async()=>{try{await navigator.mediaDevices.getUserMedia({audio:true});}catch(e){}};
     document.body.addEventListener('click', reqPerms, {once:true});
-    const startR = async(e)=>{ e.preventDefault(); try { const s = await navigator.mediaDevices.getUserMedia({audio:true}); let mime = MediaRecorder.isTypeSupported('audio/mp4')?'audio/mp4':'audio/webm'; rec = new MediaRecorder(s, {mimeType:mime}); chunks=[]; rec.ondataavailable = e => { if(e.data.size>0) chunks.push(e.data); }; rec.onstop = () => { const b = new Blob(chunks, {type:mime}); const f = new File([b], "voice.wav", {type:mime}); addToQueue(f, true); s.getTracks().forEach(t=>t.stop()); }; rec.start(); document.getElementById('voice-bar').innerText="RECORDING..."; document.getElementById('voice-bar').classList.add('recording'); } catch(e){alert("Mic Error");} };
-    const stopR = (e)=>{ e.preventDefault(); if(rec&&rec.state!=='inactive'){ rec.stop(); document.getElementById('voice-bar').innerText="HOLD TO SPEAK"; document.getElementById('voice-bar').classList.remove('recording'); } };
     
-    // Bind Voice Dynamically
-    document.addEventListener('mousedown', e => { if(e.target.id === 'voice-bar') startR(e); });
-    document.addEventListener('mouseup', e => { if(e.target.id === 'voice-bar') stopR(e); });
-    document.addEventListener('touchstart', e => { if(e.target.id === 'voice-bar') startR(e); });
-    document.addEventListener('touchend', e => { if(e.target.id === 'voice-bar') stopR(e); });
+    const startR = async(e)=>{ 
+        if(e.target.id !== 'voice-bar') return;
+        e.preventDefault(); 
+        try { 
+            const s = await navigator.mediaDevices.getUserMedia({audio:true}); 
+            let mime = MediaRecorder.isTypeSupported('audio/mp4')?'audio/mp4':'audio/webm'; 
+            rec = new MediaRecorder(s, {mimeType:mime}); chunks=[]; 
+            rec.ondataavailable = e => { if(e.data.size>0) chunks.push(e.data); }; 
+            rec.onstop = () => { const b = new Blob(chunks, {type:mime}); const f = new File([b], "voice.wav", {type:mime}); addToQueue(f, true); s.getTracks().forEach(t=>t.stop()); }; 
+            rec.start(); 
+            e.target.innerText="RECORDING..."; e.target.classList.add('recording'); 
+        } catch(e){alert("Mic Error");} 
+    };
+    const stopR = (e)=>{ 
+        if(e.target.id !== 'voice-bar') return;
+        e.preventDefault(); 
+        if(rec&&rec.state!=='inactive'){ rec.stop(); e.target.innerText="HOLD TO SPEAK"; e.target.classList.remove('recording'); } 
+    };
+    
+    document.body.addEventListener('mousedown', startR);
+    document.body.addEventListener('mouseup', stopR);
+    document.body.addEventListener('touchstart', startR);
+    document.body.addEventListener('touchend', stopR);
 
     window.closeAllModals = () => document.querySelectorAll('.modal-overlay').forEach(e=>e.classList.add('hidden'));
     window.cancelTransfer = (id, self) => { if(self) cancelFlag[id]=true; else activeDownloads[id]='cancelled'; document.getElementById(`progress-row-${id}`).innerHTML='<div class="bubble clean" style="color:red;font-size:12px">🚫 Cancelled</div>'; };
