@@ -2,7 +2,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const SERVER_URL = 'https://wojak-backend.onrender.com';
 
-    // --- 0. 样式 (V66 基础 + 修复) ---
+    // --- 0. 样式 (V67 稳定版) ---
     const styleSheet = document.createElement("style");
     styleSheet.innerText = `
         :root { --pepe-green: #59BC10; --pepe-dark: #46960C; --bg: #F2F2F7; --danger: #FF3B30; }
@@ -19,11 +19,11 @@ document.addEventListener('DOMContentLoaded', () => {
         .user-pill { display: flex; align-items: center; gap: 10px; background: #f5f5f5; padding: 5px 10px; border-radius: 20px; cursor: pointer; border: 1px solid #ddd; font-weight: 600; font-size: 14px; }
         .header-avatar { width: 32px; height: 32px; border-radius: 50%; background: #fff; object-fit: contain; border: 1px solid #eee; }
 
-        /* 聊天视图 (物理隔离) */
+        /* 聊天视图 */
         #view-chat {
             position: fixed; top: 0; left: 0; width: 100%; height: 100%;
             background: #F2F2F7; z-index: 600; 
-            transform: translateX(100%); /* 默认隐藏 */
+            transform: translateX(100%); 
             transition: transform 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94);
             display: flex; flex-direction: column;
         }
@@ -48,7 +48,6 @@ document.addEventListener('DOMContentLoaded', () => {
             display: flex; justify-content: center; align-items: center; cursor: pointer; color: #555;
         }
         
-        /* 中间输入区 */
         .input-zone { flex: 1; position: relative; height: 42px; display: flex; align-items: center; min-width: 0; }
         
         #chat-input { 
@@ -64,7 +63,6 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         #chat-send-btn:active { transform: scale(0.95); opacity: 0.9; }
 
-        /* 语音条 */
         #voice-bar {
             position: absolute; top: 0; left: 0; width: 100%; height: 100%; 
             border-radius: 20px; background: var(--danger); color: #fff; 
@@ -76,11 +74,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
         .hidden { display: none !important; }
 
-        /* 列表项 (高亮可点) */
+        /* 列表项 */
         .k-list-item { 
             background: #fff; border-radius: 12px; padding: 12px; margin-bottom: 10px; 
             box-shadow: 0 1px 3px rgba(0,0,0,0.05); border: 1px solid #f0f0f0; position: relative; 
-            cursor: pointer; z-index: 10; /* 确保层级 */
+            cursor: pointer; z-index: 10; 
         }
         .k-list-item:active { background: #f5f5f5; transform: scale(0.98); }
 
@@ -133,7 +131,7 @@ document.addEventListener('DOMContentLoaded', () => {
     document.body.insertAdjacentHTML('beforeend', previewHTML);
 
     // --- 1. 数据 ---
-    const DB_KEY = 'pepe_v67_fix_everything';
+    const DB_KEY = 'pepe_v68_global_scope';
     const CHUNK_SIZE = 12 * 1024;
     let db, socket, activeChatId;
     let activeDownloads = {}, isSending = false, cancelFlag = {}, uploadQueue = [], globalAudio = null;
@@ -153,17 +151,17 @@ document.addEventListener('DOMContentLoaded', () => {
     const initUI = () => {
         document.getElementById('my-id-display').innerText = MY_ID;
         document.getElementById('my-nickname').innerText = db.profile.nickname;
+        
         const avatar = document.getElementById('my-avatar');
         avatar.src = './icon.png';
         avatar.onerror = () => { avatar.src = `https://api.dicebear.com/7.x/notionists/svg?seed=${db.profile.avatarSeed}`; };
 
-        // ★ 核心修复：先构建底部栏 HTML，再渲染 ★
         setupFooterHTML();
         setupDialpadHTML();
         
         renderFriends();
         setupStickers();
-        renderInputZone(); // 更新显示状态
+        renderInputZone(); 
 
         setTimeout(() => {
             const q = document.getElementById("qrcode");
@@ -171,7 +169,6 @@ document.addEventListener('DOMContentLoaded', () => {
         }, 500);
     };
 
-    // ★ 核心修复：强制注入底部栏，防止 ID 丢失 ★
     function setupFooterHTML() {
         const inputZone = document.querySelector('.input-zone');
         if (inputZone) {
@@ -182,7 +179,6 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    // --- 3. 拨号盘 (强制注入) ---
     function setupDialpadHTML() {
         const body = document.querySelector('#add-overlay .modal-body');
         if(body) {
@@ -201,48 +197,109 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
+    // ★★★ 3. 全局暴露核心函数 (解决作用域问题) ★★★
+    
+    // 打开聊天
+    window.openChat = (id) => {
+        try{ if(window.speechSynthesis) window.speechSynthesis.cancel(); }catch(e){}
+        activeChatId = id;
+        const f = db.friends.find(x => x.id === id);
+        document.getElementById('chat-partner-name').innerText = f ? (f.alias || f.id) : id;
+        
+        isVoiceMode = false; renderInputZone();
+        
+        const view = document.getElementById('view-chat');
+        view.classList.add('active');
+        window.history.pushState({ chat: true }, "");
+        
+        const box = document.getElementById('messages-container');
+        box.innerHTML = '';
+        const msgs = db.history[id] || [];
+        msgs.forEach(m => appendMsgDOM(m));
+    };
+
+    // 拨号
     window.dial = (k) => {
         const d = document.getElementById('dial-display');
         if(!d) return;
         if(k === 'C') { dialInput = ""; d.innerText = "____"; return; }
+        
         if(k === 'OK') { 
             const inputStr = String(dialInput);
             if(inputStr.length === 4) {
                 if(inputStr === MY_ID) { alert("No Self-Chat"); return; }
                 const target = inputStr;
+                
                 if(!db.friends.find(f=>f.id===target)) { 
                     db.friends.push({id:target, addedAt:Date.now(), alias:`User ${target}`, unread:false}); 
                     saveDB(); 
                     renderFriends(); 
                 }
                 window.closeAllModals();
-                setTimeout(() => openChat(target), 50);
+                setTimeout(() => window.openChat(target), 50); // 调用全局 openChat
                 dialInput = ""; d.innerText = "____";
             } else alert("Enter 4 Digits");
             return; 
         }
+        
         if(String(dialInput).length < 4) {
             dialInput += k;
             d.innerText = String(dialInput).padEnd(4,'_');
             if(navigator.vibrate) navigator.vibrate(30);
         }
     };
+    
+    // 其他全局函数
+    window.closeAllModals = () => document.querySelectorAll('.modal-overlay').forEach(e=>e.classList.add('hidden'));
+    window.cancelTransfer = (id, self) => { if(self) cancelFlag[id]=true; else activeDownloads[id]='cancelled'; document.getElementById(`progress-row-${id}`).innerHTML='<div class="bubble clean" style="color:red;font-size:12px">🚫 Cancelled</div>'; };
+    window.previewMedia = (u,t) => {
+        const m = document.getElementById('media-preview-modal'); const c = document.getElementById('preview-container'); c.innerHTML='';
+        const dl = document.getElementById('preview-download-btn'); if(dl) { dl.href=u; dl.download=`f_${Date.now()}`; }
+        if (t==='audio') c.innerHTML = `<audio src="${u}" controls autoplay style="width:80%;"></audio>`;
+        else if (t==='image') c.innerHTML = `<img src="${u}" style="max-width:100%;max-height:100vh;">`;
+        else c.innerHTML = `<video src="${u}" controls autoplay style="max-width:100%;"></video>`;
+        m.classList.remove('hidden'); m.style.display='flex';
+    };
+    window.closePreview = () => document.getElementById('media-preview-modal').classList.add('hidden');
+    window.handleAudio = (act, u, id) => { 
+        if(!globalAudio) globalAudio=new Audio(); 
+        const icon = document.getElementById(id); // span icon
+        // 简单处理：如果找不到icon元素（比如传的是btn），尝试找子元素或自身
+        
+        if(act==='toggle') {
+            if(globalAudio.src !== u) { globalAudio.src = u; globalAudio.play(); if(icon) icon.innerText='⏸'; }
+            else { 
+                if(globalAudio.paused) { globalAudio.play(); if(icon) icon.innerText='⏸'; } 
+                else { globalAudio.pause(); if(icon) icon.innerText='▶'; } 
+            }
+            globalAudio.onended = () => { if(icon) icon.innerText='▶'; };
+        }
+    };
+    window.editMyName = () => { const n=prompt("Name", db.profile.nickname); if(n) { db.profile.nickname=n; saveDB(); initUI(); } };
+    window.editContactAlias = (fid) => { const f=db.friends.find(x=>x.id===fid); if(f) { const n=prompt("Alias:", f.alias||f.id); if(n){ f.alias=n; saveDB(); renderFriends(); } } };
+    window.editFriendName = () => { if(activeChatId) window.editContactAlias(activeChatId); };
 
+    // --- 绑定 ---
     document.getElementById('add-id-btn').onclick = () => {
         document.getElementById('add-overlay').classList.remove('hidden');
-        dialInput = "";
-        setupDialpadHTML();
+        dialInput = ""; setupDialpadHTML();
         const d = document.getElementById('dial-display'); if(d) d.innerText = "____";
     };
+    document.getElementById('scan-btn').onclick = () => {
+        document.getElementById('qr-overlay').classList.remove('hidden');
+        setTimeout(()=>{ if(window.Html5Qrcode) { const s=new Html5Qrcode("qr-reader"); window.scanner=s; s.start({facingMode:"environment"}, {fps:10}, t=>{ s.stop().then(()=>{ window.closeAllModals(); if(t.length===4) { if(!db.friends.find(f=>f.id===t)) { db.friends.push({id:t, addedAt:Date.now(), alias:`User ${t}`}); saveDB(); renderFriends(); } window.openChat(t); } }); }); } }, 300);
+    };
+    document.querySelector('.user-pill').onclick = window.editMyName;
+    document.querySelector('.chat-user-info').onclick = window.editFriendName;
 
-    // --- 4. 底部栏渲染 ---
+    // --- 底部栏渲染 ---
     function renderInputZone() {
         const input = document.getElementById('chat-input');
         const sendBtn = document.getElementById('chat-send-btn');
         const voiceBar = document.getElementById('voice-bar');
         const modeBtn = document.getElementById('mode-switch-btn');
 
-        if (!input || !voiceBar) return; // 防御
+        if (!input || !voiceBar) return;
 
         if (isVoiceMode) {
             input.style.display = 'none';
@@ -257,7 +314,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    // --- 5. 网络 ---
+    // --- 网络 ---
     if(!SERVER_URL.includes('onrender')) alert("Config URL!");
     else {
         socket = io(SERVER_URL, { reconnection: true, transports: ['websocket'] });
@@ -275,7 +332,6 @@ document.addEventListener('DOMContentLoaded', () => {
             if(msg.type === 'tunnel_file_packet') {
                 try { const p = JSON.parse(msg.content); handleTunnelPacket(p, fid, friend); } catch(e){} return;
             }
-
             const m = { type: msg.type, content: msg.content, isSelf: false, ts: msg.timestamp, fileName: msg.fileName };
             saveAndNotify(fid, m, friend);
         });
@@ -295,6 +351,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
+    // --- 文件传输 ---
     function handleTunnelPacket(p, fid, friend) {
         const safeName = p.fileName || "File_" + Date.now();
         if(p.subType === 'chunk') {
@@ -337,7 +394,6 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    // --- 6. 发送队列 ---
     function addToQueue(file, isVoice = false) { uploadQueue.push({file, isVoice}); processQueue(); }
     function processQueue() { if(isSending || uploadQueue.length === 0) return; const item = uploadQueue.shift(); sendFileChunked(item.file, item.isVoice); }
 
@@ -350,7 +406,7 @@ document.addEventListener('DOMContentLoaded', () => {
         cancelFlag[fileId] = false;
         appendProgressBubble(activeChatId, fileId, sendName, true);
         
-        let offset=0, lastTime=Date.now(), lastBytes=0;
+        let offset=0;
         const readNext = () => {
             if (cancelFlag[fileId] || !socket.connected) { isSending = false; setTimeout(processQueue, 500); return; }
             if (offset >= total) {
@@ -374,19 +430,11 @@ document.addEventListener('DOMContentLoaded', () => {
                 const b64 = e.target.result.split(',')[1];
                 socket.emit('send_private', {
                     targetId: activeChatId, type: 'tunnel_file_packet',
-                    content: JSON.stringify({
-                        subType: 'chunk', fileId, data: b64,
-                        fileName: sendName, fileType: file.type, totalSize: total,
-                        isVoice: isVoice
-                    })
+                    content: JSON.stringify({ subType: 'chunk', fileId, data: b64, fileName: sendName, fileType: file.type, totalSize: total, isVoice: isVoice })
                 });
                 offset += chunk.size;
                 const now = Date.now();
-                if(now - lastTime > 200) {
-                    const spd = ((offset - lastBytes)/1024)/((now - lastTime)/1000);
-                    updateProgressUI(fileId, offset, total, spd);
-                    lastTime = now; lastBytes = offset;
-                }
+                if(now - Date.now() > 500) { updateProgressUI(fileId, offset, total, 0); }
                 setTimeout(readNext, 30);
             };
             r.readAsDataURL(chunk);
@@ -402,19 +450,14 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    // --- 7. 界面交互 ---
+    // --- 7. 发送与返回 ---
     const handleSend = (e) => {
         if(e) e.preventDefault();
         const t = document.getElementById('chat-input');
         if(t && t.value.trim()){ sendData('text', t.value); t.value=''; t.focus(); }
     };
     document.getElementById('chat-send-btn').onclick = handleSend;
-    // 动态绑定的输入框，需要事件委托
-    document.addEventListener('keydown', e => {
-        if(e.target.id === 'chat-input' && e.key === 'Enter') {
-            e.preventDefault(); handleSend();
-        }
-    });
+    document.getElementById('chat-input').addEventListener('keydown', e=>{if(e.key==='Enter') handleSend();});
 
     window.goBack = () => {
         if(history.state && history.state.chat) history.back();
@@ -423,7 +466,8 @@ document.addEventListener('DOMContentLoaded', () => {
     function closeChatUI() {
         const view = document.getElementById('view-chat');
         view.classList.remove('active');
-        activeChatId = null; renderFriends();
+        activeChatId = null; 
+        renderFriends();
     }
     document.getElementById('chat-back-btn').onclick = window.goBack;
     window.addEventListener('popstate', () => {
@@ -432,25 +476,6 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     document.getElementById('mode-switch-btn').onclick = () => { isVoiceMode = !isVoiceMode; renderInputZone(); };
-
-    // ★ 核心修复：防止 voice-bar ID 缺失 ★
-    function openChat(id) {
-        try{ if(window.speechSynthesis) window.speechSynthesis.cancel(); }catch(e){}
-        activeChatId = id;
-        const f = db.friends.find(x => x.id === id);
-        document.getElementById('chat-partner-name').innerText = f ? (f.alias || f.id) : id;
-        
-        isVoiceMode = false; renderInputZone();
-        
-        const view = document.getElementById('view-chat');
-        view.classList.add('active');
-        window.history.pushState({ chat: true }, "");
-        
-        const box = document.getElementById('messages-container');
-        box.innerHTML = '';
-        const msgs = db.history[id] || [];
-        msgs.forEach(m => appendMsgDOM(m));
-    }
 
     function appendMsgDOM(msg) {
         const box = document.getElementById('messages-container');
@@ -494,18 +519,6 @@ document.addEventListener('DOMContentLoaded', () => {
         div.innerHTML = html; box.appendChild(div); box.scrollTop = box.scrollHeight;
     }
 
-    function appendProgressBubble(chatId, fileId, fileName, isSelf) {
-        if(activeChatId !== chatId) return;
-        const box = document.getElementById('messages-container');
-        const div = document.createElement('div'); div.id = `progress-row-${fileId}`; div.className = `msg-row ${isSelf?'self':'other'}`;
-        div.innerHTML = `<div class="bubble clean"><div class="progress-wrapper"><div style="font-weight:bold;margin-bottom:4px;overflow:hidden;text-overflow:ellipsis;">${fileName}</div><div class="progress-track"><div id="bar-${fileId}" class="progress-fill"></div></div><div class="cancel-btn" onclick="cancelTransfer('${fileId}', ${isSelf})">✕</div></div></div>`;
-        box.appendChild(div); box.scrollTop = box.scrollHeight;
-    }
-    function updateProgressUI(id, cur, total, spd) { const bar = document.getElementById(`bar-${id}`); if(bar) bar.style.width = `${Math.floor((cur/total)*100)}%`; }
-    function replaceProgressWithContent(id, msg) { const row = document.getElementById(`progress-row-${id}`); if(row) { row.remove(); appendMsgDOM(msg); } }
-    function sendData(type, content) { if(socket && socket.connected) socket.emit('send_private', { targetId: activeChatId, content, type }); const m = { type, content, isSelf: true, ts: Date.now() }; if(!db.history[activeChatId]) db.history[activeChatId] = []; db.history[activeChatId].push(m); saveDB(); appendMsgDOM(m); }
-    function b64toBlob(b,t) { try{ const bin=atob(b); const a=new Uint8Array(bin.length); for(let i=0;i<bin.length;i++) a[i]=bin.charCodeAt(i); return new Blob([a],{type:t}); }catch(e){ return new Blob([],{type:t}); } }
-
     const fIn = document.getElementById('chat-file-input'); fIn.setAttribute('multiple','');
     document.getElementById('file-btn').onclick = () => fIn.click();
     fIn.onchange = e => { if(e.target.files.length) Array.from(e.target.files).forEach(f => addToQueue(f, false)); };
@@ -533,11 +546,9 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     document.getElementById('sticker-btn').onclick = () => document.getElementById('sticker-panel').classList.toggle('hidden');
 
-    // 录音逻辑 (绑定到 document body 代理，因为 voice-bar 是动态插入的)
-    let rec, chunks;
+    // 录音
     const reqPerms = async()=>{try{await navigator.mediaDevices.getUserMedia({audio:true});}catch(e){}};
     document.body.addEventListener('click', reqPerms, {once:true});
-    
     const startR = async(e)=>{ 
         if(e.target.id !== 'voice-bar') return;
         e.preventDefault(); 
@@ -556,46 +567,18 @@ document.addEventListener('DOMContentLoaded', () => {
         e.preventDefault(); 
         if(rec&&rec.state!=='inactive'){ rec.stop(); e.target.innerText="HOLD TO SPEAK"; e.target.classList.remove('recording'); } 
     };
-    
     document.body.addEventListener('mousedown', startR);
     document.body.addEventListener('mouseup', stopR);
     document.body.addEventListener('touchstart', startR);
     document.body.addEventListener('touchend', stopR);
 
-    window.closeAllModals = () => document.querySelectorAll('.modal-overlay').forEach(e=>e.classList.add('hidden'));
-    window.cancelTransfer = (id, self) => { if(self) cancelFlag[id]=true; else activeDownloads[id]='cancelled'; document.getElementById(`progress-row-${id}`).innerHTML='<div class="bubble clean" style="color:red;font-size:12px">🚫 Cancelled</div>'; };
-    window.previewMedia = (u,t) => {
-        const m = document.getElementById('media-preview-modal'); const c = document.getElementById('preview-container'); c.innerHTML='';
-        const dl = document.getElementById('preview-download-btn'); if(dl) { dl.href=u; dl.download=`f_${Date.now()}`; }
-        if (t==='audio') c.innerHTML = `<audio src="${u}" controls autoplay style="width:80%;"></audio>`;
-        else if (t==='image') c.innerHTML = `<img src="${u}" style="max-width:100%;max-height:100vh;">`;
-        else c.innerHTML = `<video src="${u}" controls autoplay style="max-width:100%;"></video>`;
-        m.classList.remove('hidden'); m.style.display='flex';
-    };
-    window.closePreview = () => document.getElementById('media-preview-modal').classList.add('hidden');
-    window.playVoice = (u) => { new Audio(u).play(); };
-    window.handleAudio = (act, u, id) => { 
-        if(!globalAudio) globalAudio=new Audio(); 
-        const icon = document.getElementById(id);
-        if(act==='toggle') {
-            if(globalAudio.src !== u) { globalAudio.src = u; globalAudio.play(); icon.innerText='⏸'; }
-            else { if(globalAudio.paused) { globalAudio.play(); icon.innerText='⏸'; } else { globalAudio.pause(); icon.innerText='▶'; } }
-            globalAudio.onended = () => icon.innerText='▶';
-        }
-    };
-    window.editMyName = () => { const n=prompt("Name", db.profile.nickname); if(n) { db.profile.nickname=n; saveDB(); initUI(); } };
-    document.querySelector('.user-pill').onclick = window.editMyName;
-    window.editFriendName = () => { if(activeChatId) { const f=db.friends.find(x=>x.id===activeChatId); const n=prompt("Alias:", f.alias||f.id); if(n){ f.alias=n; saveDB(); document.getElementById('chat-partner-name').innerText=n; renderFriends(); } } };
-    window.editContactAlias = (fid) => { const f=db.friends.find(x=>x.id===fid); if(f) { const n=prompt("Alias:", f.alias||f.id); if(n){ f.alias=n; saveDB(); renderFriends(); } } };
-    document.querySelector('.chat-user-info').onclick = window.editFriendName;
-
     function renderFriends() {
         const list = document.getElementById('friends-list-container'); list.innerHTML='';
         db.friends.forEach(f => {
+            // ★ 核心：使用 onclick="window.openChat(...)"，确保能调用全局函数 ★
             const div = document.createElement('div'); div.className=`k-list-item ${f.unread?'shake-active':''}`;
             const statusHtml = f.unread ? `<div class="marquee-text">📢 MESSAGE COMING...</div>` : `<div style="font-size:12px;color:#999;">Tap to chat</div>`;
-            div.innerHTML = `<div style="display:flex;align-items:center;gap:10px;"><img src="https://api.dicebear.com/7.x/notionists/svg?seed=${f.id}" style="width:45px;border-radius:10px;"><div style="flex:1;"><div style="font-weight:800;">${f.alias||f.id}</div>${statusHtml}</div><div class="list-edit-btn" onclick="event.stopPropagation();window.editContactAlias('${f.id}')">✎</div></div>`;
-            div.onclick = () => openChat(f.id);
+            div.innerHTML = `<div style="display:flex;align-items:center;gap:10px;" onclick="window.openChat('${f.id}')"><img src="https://api.dicebear.com/7.x/notionists/svg?seed=${f.id}" style="width:45px;border-radius:10px;"><div style="flex:1;"><div style="font-weight:800;">${f.alias||f.id}</div>${statusHtml}</div><div class="list-edit-btn" onclick="event.stopPropagation();window.editContactAlias('${f.id}')">✎</div></div>`;
             list.appendChild(div);
         });
     }
