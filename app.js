@@ -2,7 +2,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const SERVER_URL = 'https://wojak-backend.onrender.com';
 
-    // --- 0. 样式 (V67 稳定版) ---
+    // --- 0. 样式 (V67 稳定版 - 保持不变) ---
     const styleSheet = document.createElement("style");
     styleSheet.innerText = `
         :root { --pepe-green: #59BC10; --pepe-dark: #46960C; --bg: #F2F2F7; --danger: #FF3B30; }
@@ -10,7 +10,6 @@ document.addEventListener('DOMContentLoaded', () => {
         .defi-nav { display: none !important; }
         .scroll-content { padding-bottom: 100px !important; }
 
-        /* 头部 */
         .defi-header { 
             position: fixed; top: 0; left: 0; width: 100%; height: 60px; 
             background: #fff; z-index: 100; border-bottom: 1px solid #eee;
@@ -29,14 +28,12 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         #view-chat.active { transform: translateX(0); }
 
-        /* 消息列表 */
         #messages-container {
             flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch;
             padding: 15px; padding-bottom: 30px; 
             display: flex; flex-direction: column; gap: 12px;
         }
 
-        /* 底部输入栏 */
         .chat-footer { 
             height: 70px; flex-shrink: 0; background: #fff; 
             display: flex; align-items: center; padding: 0 8px; 
@@ -49,12 +46,10 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         
         .input-zone { flex: 1; position: relative; height: 42px; display: flex; align-items: center; min-width: 0; }
-        
         #chat-input { 
             width: 100%; height: 100%; border-radius: 20px; background: #f9f9f9; 
             border: 1px solid #ddd; padding: 0 15px; outline: none; font-size: 16px; color: #000;
         }
-        
         #chat-send-btn { 
             width: 44px; height: 42px; border-radius: 20px; background: var(--pepe-green); 
             color: #fff; border: none; font-weight: bold; flex-shrink: 0; cursor: pointer;
@@ -91,7 +86,7 @@ document.addEventListener('DOMContentLoaded', () => {
         .msg-row.other .bubble { background: #fff; color: #000; border: 1px solid #eee; border-bottom-left-radius: 4px; }
         .bubble.clean { background: transparent !important; padding: 0 !important; box-shadow: none !important; border: none !important; }
 
-        /* 语音消息 */
+        /* 语音/文件 */
         .voice-bubble { display: flex; align-items: center; gap: 10px; min-width: 160px; padding: 5px 0; }
         .voice-play-btn { width: 32px; height: 32px; border-radius: 50%; background: rgba(255,255,255,0.2); border: 1px solid rgba(255,255,255,0.3); display: flex; justify-content: center; align-items: center; cursor: pointer; color: inherit; }
         .msg-row.other .voice-play-btn { background: #f0f0f0; border-color: #ddd; color: var(--pepe-green); }
@@ -100,7 +95,6 @@ document.addEventListener('DOMContentLoaded', () => {
         .voice-progress { height: 100%; width: 0%; background: #fff; transition: width 0.2s; }
         .msg-row.other .voice-progress { background: var(--pepe-green); }
 
-        /* 文件卡片 */
         .file-card { display: flex; align-items: center; gap: 12px; background: #fff; padding: 12px; border-radius: 12px; text-decoration: none; color: #333 !important; border: 1px solid #eee; width: 220px; box-sizing: border-box; box-shadow: 0 2px 5px rgba(0,0,0,0.05); cursor: pointer; }
         .file-icon { font-size: 24px; flex-shrink: 0; }
         .file-info { flex: 1; overflow: hidden; }
@@ -124,6 +118,7 @@ document.addEventListener('DOMContentLoaded', () => {
         .drag-overlay { display: none; z-index: 99999; } .drag-overlay.active { display: flex; }
         @keyframes pulse { 0%{transform:scale(1);} 50%{transform:scale(1.02);} }
         .shake-active { animation: shake 0.5s infinite; border-left: 4px solid var(--danger); }
+        @keyframes shake { 0%,100%{transform:translateX(0);} 25%{transform:translateX(-3px);} 75%{transform:translateX(3px);} }
     `;
     document.head.appendChild(styleSheet);
 
@@ -131,7 +126,7 @@ document.addEventListener('DOMContentLoaded', () => {
     document.body.insertAdjacentHTML('beforeend', previewHTML);
 
     // --- 1. 数据 ---
-    const DB_KEY = 'pepe_v68_global_scope';
+    const DB_KEY = 'pepe_v68_event_delegation';
     const CHUNK_SIZE = 12 * 1024;
     let db, socket, activeChatId;
     let activeDownloads = {}, isSending = false, cancelFlag = {}, uploadQueue = [], globalAudio = null;
@@ -197,12 +192,16 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    // ★★★ 3. 全局暴露核心函数 (解决作用域问题) ★★★
+    // ★★★ 3. 全局函数 (必须暴露给 HTML 调用) ★★★
     
-    // 打开聊天
+    // 打开聊天 (带防御)
     window.openChat = (id) => {
         try{ if(window.speechSynthesis) window.speechSynthesis.cancel(); }catch(e){}
         activeChatId = id;
+        
+        // 防御：如果底部栏不存在，重新生成
+        if(!document.getElementById('chat-input')) setupFooterHTML();
+        
         const f = db.friends.find(x => x.id === id);
         document.getElementById('chat-partner-name').innerText = f ? (f.alias || f.id) : id;
         
@@ -236,7 +235,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     renderFriends(); 
                 }
                 window.closeAllModals();
-                setTimeout(() => window.openChat(target), 50); // 调用全局 openChat
+                setTimeout(() => window.openChat(target), 50); 
                 dialInput = ""; d.innerText = "____";
             } else alert("Enter 4 Digits");
             return; 
@@ -248,6 +247,33 @@ document.addEventListener('DOMContentLoaded', () => {
             if(navigator.vibrate) navigator.vibrate(30);
         }
     };
+
+    // ★ 关键：列表点击委托 ★
+    const listContainer = document.getElementById('friends-list-container');
+    if(listContainer) {
+        listContainer.addEventListener('click', (e) => {
+            const item = e.target.closest('.k-list-item');
+            if(item && item.dataset.id) {
+                window.openChat(item.dataset.id);
+            }
+        });
+    }
+
+    // 渲染好友列表 (使用 dataset 配合委托)
+    function renderFriends() {
+        const list = document.getElementById('friends-list-container'); 
+        if(!list) return;
+        list.innerHTML='';
+        db.friends.forEach(f => {
+            const div = document.createElement('div'); 
+            div.className=`k-list-item ${f.unread?'shake-active':''}`;
+            div.dataset.id = f.id; // ★ 存ID
+            
+            const statusHtml = f.unread ? `<div class="marquee-text">📢 MESSAGE COMING...</div>` : `<div style="font-size:12px;color:#999;">Tap to chat</div>`;
+            div.innerHTML = `<div style="display:flex;align-items:center;gap:10px;"><img src="https://api.dicebear.com/7.x/notionists/svg?seed=${f.id}" style="width:45px;border-radius:10px;"><div style="flex:1;"><div style="font-weight:800;">${f.alias||f.id}</div>${statusHtml}</div><div class="list-edit-btn" onclick="event.stopPropagation();window.editContactAlias('${f.id}')">✎</div></div>`;
+            list.appendChild(div);
+        });
+    }
     
     // 其他全局函数
     window.closeAllModals = () => document.querySelectorAll('.modal-overlay').forEach(e=>e.classList.add('hidden'));
@@ -263,9 +289,7 @@ document.addEventListener('DOMContentLoaded', () => {
     window.closePreview = () => document.getElementById('media-preview-modal').classList.add('hidden');
     window.handleAudio = (act, u, id) => { 
         if(!globalAudio) globalAudio=new Audio(); 
-        const icon = document.getElementById(id); // span icon
-        // 简单处理：如果找不到icon元素（比如传的是btn），尝试找子元素或自身
-        
+        const icon = document.getElementById(id); 
         if(act==='toggle') {
             if(globalAudio.src !== u) { globalAudio.src = u; globalAudio.play(); if(icon) icon.innerText='⏸'; }
             else { 
@@ -332,6 +356,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if(msg.type === 'tunnel_file_packet') {
                 try { const p = JSON.parse(msg.content); handleTunnelPacket(p, fid, friend); } catch(e){} return;
             }
+
             const m = { type: msg.type, content: msg.content, isSelf: false, ts: msg.timestamp, fileName: msg.fileName };
             saveAndNotify(fid, m, friend);
         });
@@ -406,7 +431,7 @@ document.addEventListener('DOMContentLoaded', () => {
         cancelFlag[fileId] = false;
         appendProgressBubble(activeChatId, fileId, sendName, true);
         
-        let offset=0;
+        let offset=0, lastTime=Date.now(), lastBytes=0;
         const readNext = () => {
             if (cancelFlag[fileId] || !socket.connected) { isSending = false; setTimeout(processQueue, 500); return; }
             if (offset >= total) {
@@ -434,7 +459,11 @@ document.addEventListener('DOMContentLoaded', () => {
                 });
                 offset += chunk.size;
                 const now = Date.now();
-                if(now - Date.now() > 500) { updateProgressUI(fileId, offset, total, 0); }
+                if(now - lastTime > 200) {
+                    const spd = ((offset - lastBytes)/1024)/((now - lastTime)/1000);
+                    updateProgressUI(fileId, offset, total, spd);
+                    lastTime = now; lastBytes = offset;
+                }
                 setTimeout(readNext, 30);
             };
             r.readAsDataURL(chunk);
@@ -450,14 +479,19 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    // --- 7. 发送与返回 ---
+    // --- 7. 界面交互 ---
     const handleSend = (e) => {
         if(e) e.preventDefault();
         const t = document.getElementById('chat-input');
         if(t && t.value.trim()){ sendData('text', t.value); t.value=''; t.focus(); }
     };
     document.getElementById('chat-send-btn').onclick = handleSend;
-    document.getElementById('chat-input').addEventListener('keydown', e=>{if(e.key==='Enter') handleSend();});
+    // 动态绑定的输入框，需要事件委托
+    document.addEventListener('keydown', e => {
+        if(e.target.id === 'chat-input' && e.key === 'Enter') {
+            e.preventDefault(); handleSend();
+        }
+    });
 
     window.goBack = () => {
         if(history.state && history.state.chat) history.back();
@@ -519,33 +553,6 @@ document.addEventListener('DOMContentLoaded', () => {
         div.innerHTML = html; box.appendChild(div); box.scrollTop = box.scrollHeight;
     }
 
-    const fIn = document.getElementById('chat-file-input'); fIn.setAttribute('multiple','');
-    document.getElementById('file-btn').onclick = () => fIn.click();
-    fIn.onchange = e => { if(e.target.files.length) Array.from(e.target.files).forEach(f => addToQueue(f, false)); };
-    
-    const drag = document.getElementById('drag-overlay');
-    window.addEventListener('dragenter', () => { if(activeChatId) drag.classList.remove('hidden'); });
-    drag.addEventListener('dragleave', (e) => { if(e.target===drag) drag.classList.add('hidden'); });
-    window.addEventListener('dragover', e=>e.preventDefault());
-    window.addEventListener('drop', e => { 
-        e.preventDefault(); drag.classList.add('hidden');
-        if(activeChatId) {
-            if(e.dataTransfer.items) for(let i=0; i<e.dataTransfer.items.length; i++) traverseFileTree(e.dataTransfer.items[i].webkitGetAsEntry());
-            else if(e.dataTransfer.files.length) Array.from(e.target.files).forEach(f => addToQueue(f, false));
-        }
-    });
-
-    function setupStickers() {
-        const g = document.getElementById('sticker-grid'); g.innerHTML = '';
-        for(let i=1; i<=12; i++) {
-            const img = document.createElement('img'); img.src = `./s${i}.png`; 
-            img.onerror = () => { img.src = `https://api.dicebear.com/7.x/fun-emoji/svg?seed=${i}`; };
-            img.className='sticker-item'; img.onclick=()=>{ if(activeChatId){ sendData('sticker', img.src); document.getElementById('sticker-panel').classList.add('hidden'); }};
-            g.appendChild(i);
-        }
-    }
-    document.getElementById('sticker-btn').onclick = () => document.getElementById('sticker-panel').classList.toggle('hidden');
-
     // 录音
     const reqPerms = async()=>{try{await navigator.mediaDevices.getUserMedia({audio:true});}catch(e){}};
     document.body.addEventListener('click', reqPerms, {once:true});
@@ -571,17 +578,6 @@ document.addEventListener('DOMContentLoaded', () => {
     document.body.addEventListener('mouseup', stopR);
     document.body.addEventListener('touchstart', startR);
     document.body.addEventListener('touchend', stopR);
-
-    function renderFriends() {
-        const list = document.getElementById('friends-list-container'); list.innerHTML='';
-        db.friends.forEach(f => {
-            // ★ 核心：使用 onclick="window.openChat(...)"，确保能调用全局函数 ★
-            const div = document.createElement('div'); div.className=`k-list-item ${f.unread?'shake-active':''}`;
-            const statusHtml = f.unread ? `<div class="marquee-text">📢 MESSAGE COMING...</div>` : `<div style="font-size:12px;color:#999;">Tap to chat</div>`;
-            div.innerHTML = `<div style="display:flex;align-items:center;gap:10px;" onclick="window.openChat('${f.id}')"><img src="https://api.dicebear.com/7.x/notionists/svg?seed=${f.id}" style="width:45px;border-radius:10px;"><div style="flex:1;"><div style="font-weight:800;">${f.alias||f.id}</div>${statusHtml}</div><div class="list-edit-btn" onclick="event.stopPropagation();window.editContactAlias('${f.id}')">✎</div></div>`;
-            list.appendChild(div);
-        });
-    }
 
     initUI();
     document.body.addEventListener('click', () => document.getElementById('msg-sound').load(), {once:true});
